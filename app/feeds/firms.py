@@ -235,6 +235,7 @@ def analyze(payload: dict, lat: float, lon: float) -> dict:
     kept_located = sorted((located(row) for row in kept), key=lambda row: row["distance_km"])
     static_located = sorted((located(row) for row in possible_static), key=lambda row: row["distance_km"])
     low_located = sorted((located(row) for row in low_confidence), key=lambda row: row["distance_km"])
+    industrial_located = sorted((located(row) for row in industrial), key=lambda row: row["distance_km"])
 
     by_site: dict[str, int] = defaultdict(int)
     for row in industrial:
@@ -247,6 +248,8 @@ def analyze(payload: dict, lat: float, lon: float) -> dict:
         static_clusters.append(
             {
                 "count": len(group),
+                "lat": nearest["lat"],
+                "lon": nearest["lon"],
                 "distance_km": nearest["distance_km"],
                 "distance_mi": nearest["distance_mi"],
                 "bearing": nearest["bearing"],
@@ -288,11 +291,13 @@ def analyze(payload: dict, lat: float, lon: float) -> dict:
         "low_confidence_count": len(low_confidence),
         "industrial_count": len(industrial),
         "industrial_by_site": [{"name": name, "count": count} for name, count in sorted(by_site.items())],
+        "industrial_points": industrial_located,
         "possible_static_count": len(possible_static),
         "possible_static": static_clusters,
         "kept_count": len(kept_located),
         "kept": kept_located,
         "low_confidence": low_located[:8],
+        "low_confidence_points": low_located,
         "closest": closest,
         "notes": notes,
         "source_errors": source_errors,

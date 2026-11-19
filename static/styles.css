@@ -88,6 +88,21 @@ button, .examples button, .candidates button, .days button {
 
 .error { border-color: var(--ink); }
 
+.map-block { margin-top: 18px; }
+#map {
+  height: 380px;
+  border: 1px solid var(--ink);
+  background: #ececec;
+}
+.leaflet-container { font-family: Inter, system-ui, sans-serif; }
+.home-mark, .dot-kept, .dot-muted {
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+.home-mark { background: #111; border: 2px solid #fff; }
+.dot-kept { background: #111; }
+.dot-muted { background: #fff; border: 1px solid #6a6a6a; }
+
 .score-row { display: flex; align-items: flex-end; gap: 16px; }
 .score-num { font-size: 84px; line-height: 0.85; font-weight: 600; letter-spacing: -0.05em; margin: 0; }
 .band { font-size: 22px; font-weight: 600; margin: 0; }
