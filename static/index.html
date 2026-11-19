@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keep Your Home Insurable</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <p class="eyebrow">Estimated risk from public data</p>
+      <h1>Keep Your Home Insurable</h1>
+      <p class="lede" id="disclaimer">This is not an insurer's score.</p>
+    </header>
+
+    <form id="lookup">
+      <label for="address">US address</label>
+      <div class="row">
+        <input id="address" name="address" type="text" autocomplete="street-address" placeholder="Street, city, state" required>
+        <button type="submit">Look up</button>
+      </div>
+      <div class="examples" id="examples"></div>
+      <label class="quiet" for="outage">Demo a feed outage</label>
+      <input id="outage" name="simulate_outage" type="text" placeholder="firms, power, nws" spellcheck="false">
+    </form>
+
+    <p id="status" class="status" role="status"></p>
+    <section id="error" class="error" hidden></section>
+    <section id="results" hidden></section>
+    <section id="checklist"></section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
