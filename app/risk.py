@@ -20,7 +20,7 @@ from app.constants import (
     STATIC_HEAT_MAX_FRP_MW,
 )
 from app.feeds.firms import analyze, fetch_area
-from app.feeds.nominatim import classify, search
+from app.feeds.nominatim import classify, did_you_mean, search
 from app.feeds.nws import aggregate_forecast, fetch_bundle
 from app.feeds.power import fetch_point, summarize
 from app.feeds.wfigs import attach, fetch_incidents, parse_incidents
@@ -111,6 +111,7 @@ def evaluate(
             raise LookupProblem("That coordinate is off the map.", "bad_request")
 
     geocode_view = None
+    suggest = False
     if lat is None or lon is None:
         assert query
         loaded = load_feed(
@@ -134,6 +135,8 @@ def evaluate(
         lat = hit["lat"]
         lon = hit["lon"]
         label = hit["label"]
+        payload = loaded["payload"] if isinstance(loaded["payload"], list) else []
+        suggest = did_you_mean(query, hit.get("locality") or "", len(payload))
     else:
         label = query or f"{lat:.4f}, {lon:.4f}"
 
@@ -396,7 +399,13 @@ def evaluate(
     return {
         "ok": True,
         "disclaimer": DISCLAIMER,
-        "address": {"query": query, "label": label, "lat": lat, "lon": lon},
+        "address": {
+            "query": query,
+            "label": label,
+            "lat": lat,
+            "lon": lon,
+            "did_you_mean": suggest,
+        },
         "timezone": tz_name,
         "today": today.isoformat(),
         "score": score,
