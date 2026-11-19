@@ -160,6 +160,12 @@ def alert_text(band: str, day: date, today: date, red_flag: bool) -> str:
     return line
 
 
+def _round_or_none(value: float | None, digits: int = 1) -> float | None:
+    if value is None:
+        return None
+    return round(value, digits)
+
+
 def _component(
     *,
     key: str,
@@ -223,8 +229,8 @@ def score_day(
                     "temp_f": round(weather["temp_f"], 1),
                     "rh_pct": round(weather["rh"], 1),
                     "wind_mph": round(weather["wind_mph"], 1),
-                    "sustained_wind_mph": weather.get("sustained_mph"),
-                    "gust_mph": weather.get("gust_mph"),
+                    "sustained_wind_mph": _round_or_none(weather.get("sustained_mph")),
+                    "gust_mph": _round_or_none(weather.get("gust_mph")),
                     "emc": round(ffwi["emc"], 2),
                     "eta": round(ffwi["eta"], 4),
                     "ffwi_raw": round(ffwi["ffwi_raw"], 2),

@@ -10,6 +10,21 @@ scale for unfinished work, not a premium quote.
 
 from __future__ import annotations
 
+# The primary example button. Change this one string to point the demo elsewhere.
+# Verified live: Nominatim resolves it to 36.36297, -82.79874, the NIFC incident
+# "Greene - Caney Creek Lane" (wildfire, discovered 2026-11-18).
+DEFAULT_EXAMPLE_ADDRESS = "Caney Creek Lane, Greene County, TN"
+# Second example button. Not special in the scoring code.
+SECOND_EXAMPLE_ADDRESS = "Grizzly Peak Blvd, Berkeley, CA"
+
+USER_AGENT = (
+    "KeepYourHomeInsurable/1.0 (educational US wildfire-risk demo; "
+    "Berkeley-Stanford hackathon)"
+)
+
+# Two Nominatim hits farther apart than this are treated as different places.
+GEOCODE_AMBIGUOUS_KM = 1.0
+
 # --- Fosberg Fire Weather Index -------------------------------------------------
 # Equilibrium moisture content is Simard's piecewise regression as used by
 # Fosberg (1978) and transcribed by Goodrick (2001) and the University of
@@ -73,38 +88,131 @@ FIRMS_SOURCES = (
 # another satellite. The kept row is the highest FRP in the cluster.
 FIRMS_DEDUPE_KM = 1.0
 
-# Static industrial heat. Live FIRMS reads for 37.87, -122.23 (no key in this
-# environment; coordinates from the project brief's live check) put the nearest
-# hits on the Richmond Chevron refinery (~37.94–37.95, -122.39 to -122.40)
-# and the Martinez refineries (~38.02, -122.06 to -122.11), with FRP often
-# under 1 MW. Those are flares, not wildfires. A real fire inside one of
-# these small radii would be hidden; the radii stay tight for that reason.
-# Phillips 66 in Rodeo is the same class of shoreline flare between the two
-# and is included so it is not reported as a wildfire either.
+# Possible static heat that is not on the named-site list. A cluster is left
+# out of the score only when every one of these is true:
+#   - at least STATIC_HEAT_MIN_DETECTIONS points within STATIC_HEAT_CLUSTER_KM
+#   - every point is nominal confidence (low confidence is counted separately;
+#     any high-confidence point keeps the whole cluster)
+#   - every point has fire radiative power under STATIC_HEAT_MAX_FRP_MW
+#   - the points come from two or more satellites, or from two calendar days
+# One weak overpass is not enough: a single nominal detection under 1 MW stays
+# in the score. Matched clusters are still listed, with this reason.
+STATIC_HEAT_MAX_FRP_MW = 1.0
+STATIC_HEAT_CLUSTER_KM = 1.0
+STATIC_HEAT_MIN_DETECTIONS = 2
+
+# NIFC current incidents, attached to a detection when the incident point is
+# within this distance. Used for names and for the WF / RX label, not as a
+# replacement for the FIRMS distance factor.
+WFIGS_SEARCH_RADIUS_KM = 70.0
+WFIGS_ATTACH_KM = 15.0
+WFIGS_QUERY = (
+    "https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/"
+    "WFIGS_Incident_Locations_Current/FeatureServer/0/query"
+)
+
+# Known static industrial heat. A real wildfire inside one of these radii
+# would be hidden, so the radii stay on the facility, not the town.
+# Richmond and Martinez are the flares a live FIRMS read for the East Bay
+# actually returns (FRP often under 1 MW). The other centers are OpenStreetMap
+# facility points looked up once and written down here; they are not fetched
+# at runtime and they are not a fire archive.
 INDUSTRIAL_HEAT_SOURCES = (
     {
         "id": "chevron_richmond",
         "name": "Chevron Richmond Refinery",
-        "lat": 37.945,
-        "lon": -122.395,
-        "radius_km": 1.5,
-        "why": "Covers the verified flare cluster at about 37.94–37.95 N, 122.39–122.40 W.",
+        "lat": 37.9415,
+        "lon": -122.3950,
+        "radius_km": 1.8,
+        "why": "OSM facility center. Covers the flare cluster near 37.94–37.95 N, 122.39–122.40 W.",
     },
     {
         "id": "martinez_refineries",
-        "name": "Martinez refineries (Marathon and PBF)",
+        "name": "Martinez refineries",
         "lat": 38.020,
         "lon": -122.085,
         "radius_km": 3.0,
-        "why": "Covers the verified cluster at about 38.02 N, 122.06–122.11 W.",
+        "why": "Static heat verified near 38.02 N, 122.06–122.11 W. OSM has no single facility point.",
+    },
+    {
+        "id": "valero_benicia",
+        "name": "Valero Benicia Refinery",
+        "lat": 38.0720,
+        "lon": -122.1382,
+        "radius_km": 1.8,
+        "why": "OSM facility center.",
+    },
+    {
+        "id": "chevron_el_segundo",
+        "name": "Chevron El Segundo Refinery",
+        "lat": 33.9158,
+        "lon": -118.4191,
+        "radius_km": 2.0,
+        "why": "OSM facility center.",
+    },
+    {
+        "id": "motiva_port_arthur",
+        "name": "Motiva Port Arthur Refinery",
+        "lat": 29.8861,
+        "lon": -93.9607,
+        "radius_km": 2.5,
+        "why": "OSM facility center.",
+    },
+    {
+        "id": "bp_whiting",
+        "name": "BP Whiting Refinery",
+        "lat": 41.6658,
+        "lon": -87.4804,
+        "radius_km": 2.5,
+        "why": "OSM facility center.",
+    },
+    {
+        "id": "marathon_anacortes",
+        "name": "Marathon Anacortes Refinery",
+        "lat": 48.4892,
+        "lon": -122.5632,
+        "radius_km": 2.0,
+        "why": "OSM facility center.",
     },
     {
         "id": "phillips66_rodeo",
-        "name": "Phillips 66 Rodeo refinery",
-        "lat": 38.041,
-        "lon": -122.261,
-        "radius_km": 1.5,
-        "why": "Shoreline refinery flare between Richmond and Martinez.",
+        "name": "Rodeo San Francisco Refinery",
+        "lat": 38.0429,
+        "lon": -122.2532,
+        "radius_km": 1.6,
+        "why": "OSM industrial point for the Rodeo refinery (Phillips 66).",
+    },
+    {
+        "id": "exxon_baytown",
+        "name": "Baytown Refinery",
+        "lat": 29.7420,
+        "lon": -95.0270,
+        "radius_km": 2.5,
+        "why": "OSM point named Baytown Refinery.",
+    },
+    {
+        "id": "marathon_garyville",
+        "name": "Garyville Refinery",
+        "lat": 30.0618,
+        "lon": -90.5956,
+        "radius_km": 2.5,
+        "why": "OSM works point for the Garyville refinery.",
+    },
+    {
+        "id": "wood_river",
+        "name": "Wood River Refinery",
+        "lat": 38.8407,
+        "lon": -90.0616,
+        "radius_km": 2.0,
+        "why": "OSM industrial point in Roxana, Illinois.",
+    },
+    {
+        "id": "chevron_pascagoula",
+        "name": "Pascagoula Refinery",
+        "lat": 30.3443,
+        "lon": -88.4826,
+        "radius_km": 2.0,
+        "why": "OSM industrial point for the Pascagoula refinery.",
     },
 )
 
