@@ -17,13 +17,14 @@ from app.constants import (
     DISCLAIMER,
     FORECAST_DAYS,
     SCORE_WEIGHTS,
+    STATIC_HEAT_MAX_FRP_MW,
 )
 from app.feeds.firms import analyze, fetch_area
 from app.feeds.nominatim import classify, search
 from app.feeds.nws import aggregate_forecast, fetch_bundle
 from app.feeds.power import fetch_point, summarize
 from app.feeds.wfigs import attach, fetch_incidents, parse_incidents
-from app.scoring import alert_text, score_day, weekday_name
+from app.scoring import alert_text, proximity_floor, score_day, weekday_name
 from app.timezones import fallback_timezone
 
 _FEED_LABELS = {
@@ -248,6 +249,8 @@ def evaluate(
     dryness_note = " ".join(power_summary.get("notes") or [])
     fire_available = firms_summary is not None
     closest_km = None
+    floor_distance_km = None
+    nearby_alert = None
     fire_note = " ".join(firms_notes)
     if fire_available:
         closest = firms_summary["closest"]
@@ -268,6 +271,28 @@ def evaluate(
                     f"Closest detection is {closest['distance_km']} km {closest['bearing']}, "
                     f"matched to {incident['name']} ({extra}). "
                 ) + fire_note
+        qualifying = [
+            row
+            for row in firms_summary["kept"]
+            if row.get("frp") is not None and row["frp"] >= STATIC_HEAT_MAX_FRP_MW
+        ]
+        if qualifying:
+            floor_distance_km = qualifying[0]["distance_km"]
+            if proximity_floor(floor_distance_km) > 0:
+                incident = qualifying[0].get("incident") or {}
+                category = str(incident.get("type") or "").upper()
+                if category == "WF":
+                    kind = "wildfire"
+                elif category == "RX":
+                    kind = "prescribed"
+                else:
+                    kind = "fire"
+                nearby_alert = {
+                    "distance_km": floor_distance_km,
+                    "bearing": qualifying[0].get("bearing") or "",
+                    "name": incident.get("name"),
+                    "kind": kind,
+                }
 
     red_flag_known = bool(forecast.get("covered")) and loaded["nws"]["status"] != "unavailable"
     red_flag_dates = set(forecast.get("red_flag_dates") or [])
@@ -283,6 +308,7 @@ def evaluate(
             fire_available=fire_available,
             fire_note=fire_note,
             red_flag=(day.isoformat() in red_flag_dates) if red_flag_known else None,
+            floor_distance_km=floor_distance_km if fire_available else None,
         )
         if offset == 0:
             day_label = "Today"
@@ -334,7 +360,15 @@ def evaluate(
         band = best["band"]
         partial = True
     else:
-        alert = alert_text(best["band"], date.fromisoformat(best["date"]), today, red_flag=best["date"] in red_flag_dates)
+        window_end = date.fromisoformat(day_rows[-1]["date"]) if day_rows else today
+        alert = alert_text(
+            best["band"],
+            date.fromisoformat(best["date"]),
+            today,
+            red_flag=best["date"] in red_flag_dates,
+            window_end=window_end,
+            nearby=nearby_alert,
+        )
         score = best["score"]
         band = best["band"]
         partial = bool(best["partial"] or partial_reasons or any(row["partial"] for row in day_rows))

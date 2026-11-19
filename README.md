@@ -59,6 +59,8 @@ The daily score is a weighted sum of four 0–100 pieces. Weights live in `SCORE
 | FFWI | 0.55 | The index itself, already 0–100. Day-of fire weather dominates. |
 | Days since meaningful rain | 0.25 | 0 days → 0, 21 days → 100, linear between. 2.5 mm/day is the wetting-rain line (about 0.10 inch). Counted only through the latest valid POWER day. |
 | Nearby detection | 0.12 | 100 within 5 km, 0 at 50 km, linear between. No detection left after filters is 0, which is a real reading. A missing FIRMS feed is left out. |
+
+That nearby term is at most 12 points, so a fire a few hundred meters away can still land in Moderate. After the weighted sum, a kept detection of at least 1 MW (not an industrial flare, not a low-confidence hit, not persistent sub-1 MW heat) sets a floor. The published score is the higher of the weighted sum and the floor. Within 2 km the floor is 85 (Extreme). Within 5 km it is 70 (High). From 5 km to 15 km it fades linearly from 70 to 0. At 15 km or with no qualifying detection, the floor is 0. The breakdown has its own "Proximity floor" line with that reason. The numbers are `PROXIMITY_FLOOR_*` in `app/constants.py`.
 | Red Flag Warning | 0.08 | 100 if an NWS Red Flag Warning overlaps that local day, else 0. |
 
 Bands from the rounded score: 0–24 Low, 25–49 Moderate, 50–74 High, 75–100 Extreme. The alert sentence comes from the highest day. It is only the "High risk Saturday…" form when afternoon fire weather exists. Otherwise the line says the estimate is partial.

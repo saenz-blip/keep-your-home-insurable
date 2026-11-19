@@ -75,6 +75,20 @@ POWER_LAG_NOTE = "POWER data runs ~3 days behind"
 # not a smoke-transport model.
 NEARBY_FIRE_FULL_KM = 5.0
 NEARBY_FIRE_ZERO_KM = 50.0
+# The weighted nearby-fire term tops out at 12 points, so a fire on the
+# doorstep can still look Moderate. After the weighted sum, a kept detection
+# that is not industrial, not low-confidence, and not under 1 MW
+# (STATIC_HEAT_MAX_FRP_MW) imposes a floor. The published score is the
+# higher of the weighted sum and this floor.
+#   <= 2 km: 85 (Extreme)
+#   <= 5 km: 70 (High)
+#   5 to 15 km: linear from 70 down to 0
+#   >= 15 km, or no qualifying detection: 0
+PROXIMITY_FLOOR_INNER_KM = 2.0
+PROXIMITY_FLOOR_INNER = 85.0
+PROXIMITY_FLOOR_NEAR_KM = 5.0
+PROXIMITY_FLOOR_NEAR = 70.0
+PROXIMITY_FLOOR_ZERO_KM = 15.0
 # Search box is wider than the decay distance so a fire just past 50 km is
 # still listed, with a factor of 0.
 FIRMS_SEARCH_RADIUS_KM = 70.0

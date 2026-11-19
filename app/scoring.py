@@ -16,9 +16,16 @@ from app.constants import (
     FFWI_CAP,
     NEARBY_FIRE_FULL_KM,
     NEARBY_FIRE_ZERO_KM,
+    PROXIMITY_FLOOR_INNER,
+    PROXIMITY_FLOOR_INNER_KM,
+    PROXIMITY_FLOOR_NEAR,
+    PROXIMITY_FLOOR_NEAR_KM,
+    PROXIMITY_FLOOR_ZERO_KM,
     RISK_BANDS,
     SCORE_WEIGHTS,
 )
+
+_FLOOR_UNSET = object()
 
 _WEEKDAYS = (
     "Monday",
@@ -111,6 +118,24 @@ def no_detection_factor() -> float:
     return 0.0
 
 
+def proximity_floor(distance_km: float | None) -> float:
+    """Floor for one kept detection that is not a low-FRP hit.
+
+    None means there is no qualifying detection, so the floor is 0.
+    See PROXIMITY_FLOOR_* in app.constants.
+    """
+    if distance_km is None:
+        return 0.0
+    if distance_km <= PROXIMITY_FLOOR_INNER_KM:
+        return PROXIMITY_FLOOR_INNER
+    if distance_km <= PROXIMITY_FLOOR_NEAR_KM:
+        return PROXIMITY_FLOOR_NEAR
+    if distance_km >= PROXIMITY_FLOOR_ZERO_KM:
+        return 0.0
+    span = PROXIMITY_FLOOR_ZERO_KM - PROXIMITY_FLOOR_NEAR_KM
+    return PROXIMITY_FLOOR_NEAR * (PROXIMITY_FLOOR_ZERO_KM - distance_km) / span
+
+
 def band_for(score: int) -> str:
     for threshold, name in RISK_BANDS:
         if score >= threshold:
@@ -127,37 +152,61 @@ def weekday_name(day: date) -> str:
     return _WEEKDAYS[day.weekday()]
 
 
-def alert_text(band: str, day: date, today: date, red_flag: bool) -> str:
+def alert_text(
+    band: str,
+    day: date,
+    today: date,
+    red_flag: bool,
+    *,
+    window_end: date | None = None,
+    nearby: dict[str, Any] | None = None,
+) -> str:
     """One line from the highest-risk day.
 
-    The high-risk example the product asks for is
-    "High risk Saturday. Clear brush within 30 ft before Friday."
+    A future risk day names the weekday before it: "before Friday", never
+    "before today". If the risk day is today, the action is "now".
+    Low risk names the last day of the forecast window.
+    A kept fire inside the proximity-floor range leads the sentence.
     """
-    offset = (day - today).days
-    weekday = weekday_name(day)
-    if offset <= 0:
+    if (day - today).days <= 0:
         when = "today"
-        before = "tonight"
-    elif offset == 1:
-        when = weekday
-        before = "today"
+        timing = "now"
     else:
-        when = weekday
-        before = weekday_name(day - timedelta(days=1))
+        when = weekday_name(day)
+        timing = "before " + weekday_name(day - timedelta(days=1))
 
     if band == "Low":
-        line = f"Low risk through {weekday}. Keep the 5-ft zone clear of mulch and debris."
+        end = window_end or day
+        line = f"Low risk through {weekday_name(end)}. Keep the 5-ft zone clear of mulch and debris."
     elif band == "Moderate":
-        line = f"Moderate risk {when}. Walk the 5-ft ember zone and the vents before {before}."
-    elif band == "High":
-        line = f"High risk {when}. Clear brush within 30 ft before {before}."
+        line = f"Moderate risk {when}. Walk the 5-ft ember zone and the vents {timing}."
+    elif band == "High" or nearby:
+        line = f"{band} risk {when}. Clear brush within 30 ft {timing}."
     else:
-        line = (
-            f"Extreme risk {when}. Finish the hardening checklist and be ready to leave before {before}."
-        )
+        line = f"Extreme risk {when}. Finish the hardening checklist and be ready to leave {timing}."
+
+    lead = _nearby_lead(nearby)
+    if lead:
+        line = lead + line
     if red_flag:
         line += " A Red Flag Warning is active."
     return line
+
+
+def _nearby_lead(nearby: dict[str, Any] | None) -> str:
+    if not nearby:
+        return ""
+    kind = nearby.get("kind") or "fire"
+    if kind == "wildfire":
+        label = "Active wildfire"
+    elif kind == "prescribed":
+        label = "Prescribed burn"
+    else:
+        label = "Active fire"
+    text = f"{label} {nearby['distance_km']:.1f} km {nearby['bearing']}"
+    if nearby.get("name"):
+        text += f" ({nearby['name']})"
+    return text + ". "
 
 
 def _round_or_none(value: float | None, digits: int = 1) -> float | None:
@@ -197,6 +246,7 @@ def score_day(
     fire_available: bool,
     fire_note: str,
     red_flag: bool | None,
+    floor_distance_km: Any = _FLOOR_UNSET,
 ) -> dict[str, Any]:
     """Blend the available components into one 0–100 score.
 
@@ -335,11 +385,84 @@ def score_day(
         item["contribution"] = round(contribution, 2)
         total += contribution
 
-    score = round_score(total)
+    if floor_distance_km is _FLOOR_UNSET:
+        floor_distance_km = closest_fire_km if fire_available else None
+    floor_line, floor_value = _floor_component(fire_available, floor_distance_km, total)
+    components.append(floor_line)
+    final = total if floor_value is None else max(total, floor_value)
+    score = round_score(final)
     return {
         "score": score,
         "band": band_for(score),
         "partial": partial,
         "breakdown": components,
-        "score_unrounded": round(total, 2),
+        "score_unrounded": round(final, 2),
+        "weighted_sum": round(total, 2),
     }
+
+
+def _floor_component(
+    fire_available: bool,
+    distance_km: float | None,
+    weighted_sum: float,
+) -> tuple[dict[str, Any], float | None]:
+    if not fire_available:
+        return (
+            {
+                "key": "proximity_floor",
+                "label": "Proximity floor",
+                "available": False,
+                "raw_input": {},
+                "normalized": None,
+                "weight": "floor",
+                "effective_weight": None,
+                "contribution": None,
+                "note": "Satellite detections are missing, so the proximity floor was not applied.",
+            },
+            None,
+        )
+    value = proximity_floor(distance_km)
+    if distance_km is None:
+        reason = (
+            "No kept detection at or above 1 MW. Industrial flares, low-confidence hits, "
+            "and persistent sub-1 MW heat do not set the floor. Floor is 0."
+        )
+    elif distance_km <= PROXIMITY_FLOOR_INNER_KM:
+        reason = (
+            f"Kept detection at {distance_km:.2f} km. Within {PROXIMITY_FLOOR_INNER_KM:.0f} km "
+            f"the floor is {PROXIMITY_FLOOR_INNER:.0f}. Weighted sum was {weighted_sum:.1f}. "
+            "The score is the higher of the two."
+        )
+    elif distance_km <= PROXIMITY_FLOOR_NEAR_KM:
+        reason = (
+            f"Kept detection at {distance_km:.2f} km. Within {PROXIMITY_FLOOR_NEAR_KM:.0f} km "
+            f"the floor is {PROXIMITY_FLOOR_NEAR:.0f}. Weighted sum was {weighted_sum:.1f}. "
+            "The score is the higher of the two."
+        )
+    elif distance_km >= PROXIMITY_FLOOR_ZERO_KM:
+        reason = (
+            f"Closest qualifying detection is {distance_km:.2f} km away. "
+            f"The floor fades to 0 at {PROXIMITY_FLOOR_ZERO_KM:.0f} km, so it is 0."
+        )
+    else:
+        reason = (
+            f"Kept detection at {distance_km:.2f} km. Between {PROXIMITY_FLOOR_NEAR_KM:.0f} and "
+            f"{PROXIMITY_FLOOR_ZERO_KM:.0f} km the floor fades linearly from "
+            f"{PROXIMITY_FLOOR_NEAR:.0f} to 0. Weighted sum was {weighted_sum:.1f}. "
+            "The score is the higher of the two."
+        )
+    shown = None if distance_km is None else round(distance_km, 2)
+    return (
+        {
+            "key": "proximity_floor",
+            "label": "Proximity floor",
+            "available": True,
+            "raw_input": {"closest_qualifying_km": shown, "reason": reason},
+            "normalized": round(value, 2),
+            "weight": "floor",
+            "effective_weight": None,
+            "contribution": round(value, 2),
+            "note": reason,
+        },
+        value,
+    )

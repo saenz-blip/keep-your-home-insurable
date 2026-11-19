@@ -14,6 +14,7 @@ from app.scoring import (
     fosberg_ffwi,
     fosberg_from_moisture,
     moisture_damping,
+    proximity_floor,
     score_day,
 )
 
@@ -172,20 +173,69 @@ def test_full_score_uses_nominal_weights_and_bands():
 def test_alert_matches_the_saturday_example_and_today():
     today = date(2026, 11, 19)  # Thursday
     saturday = date(2026, 11, 21)
+    friday = date(2026, 11, 20)
+    sunday = date(2026, 11, 22)
     assert (
         alert_text("High", saturday, today, red_flag=False)
         == "High risk Saturday. Clear brush within 30 ft before Friday."
     )
     assert (
         alert_text("High", today, today, red_flag=False)
-        == "High risk today. Clear brush within 30 ft before tonight."
+        == "High risk today. Clear brush within 30 ft now."
     )
-    friday = date(2026, 11, 20)
-    assert "before today" in alert_text("Moderate", friday, today, red_flag=False)
+    assert (
+        alert_text("Moderate", friday, today, red_flag=False)
+        == "Moderate risk Friday. Walk the 5-ft ember zone and the vents before Thursday."
+    )
     extreme = alert_text("Extreme", saturday, today, red_flag=True)
     assert extreme.startswith("Extreme risk Saturday.")
+    assert "before Friday" in extreme
     assert extreme.endswith("A Red Flag Warning is active.")
-    assert "through Sunday" in alert_text("Low", date(2026, 11, 22), today, False)
+    assert (
+        alert_text("Low", today, today, False, window_end=sunday)
+        == "Low risk through Sunday. Keep the 5-ft zone clear of mulch and debris."
+    )
+    assert (
+        alert_text(
+            "Extreme",
+            today,
+            today,
+            False,
+            nearby={
+                "distance_km": 0.44,
+                "bearing": "W",
+                "name": "Greene - Caney Creek Lane",
+                "kind": "wildfire",
+            },
+        )
+        == "Active wildfire 0.4 km W (Greene - Caney Creek Lane). Extreme risk today. Clear brush within 30 ft now."
+    )
+
+
+def test_proximity_floor_steps_and_overrides_the_weighted_sum():
+    assert proximity_floor(0.44) == 85
+    assert proximity_floor(2) == 85
+    assert proximity_floor(5) == 70
+    assert proximity_floor(10) == pytest.approx(35)
+    assert proximity_floor(15) == 0
+    assert proximity_floor(40) == 0
+    assert proximity_floor(None) == 0
+    day = score_day(
+        weather={"temp_f": 70, "rh": 50, "wind_mph": 5},
+        days_since_rain=1,
+        dryness_note="",
+        closest_fire_km=0.44,
+        fire_available=True,
+        fire_note="",
+        red_flag=False,
+    )
+    assert day["weighted_sum"] < 70
+    assert day["score"] >= 85
+    assert day["band"] == "Extreme"
+    floor = next(item for item in day["breakdown"] if item["key"] == "proximity_floor")
+    assert floor["normalized"] == 85
+    assert floor["weight"] == "floor"
+    assert "higher of the two" in floor["note"]
 
 
 def test_bands_on_integer_edges():
