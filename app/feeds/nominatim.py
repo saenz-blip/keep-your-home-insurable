@@ -66,9 +66,34 @@ def search(query: str) -> list[dict]:
                 "label": row.get("display_name") or text,
                 "lat": lat,
                 "lon": lon,
+                "locality": _locality(row.get("address")),
             }
         )
     return cleaned
+
+
+def _locality(address: object) -> str:
+    if not isinstance(address, dict):
+        return ""
+    for key in ("city", "town", "village", "hamlet", "municipality"):
+        value = address.get(key)
+        if isinstance(value, str) and value.strip():
+            return " ".join(value.split())
+    return ""
+
+
+def did_you_mean(query: str, locality: str, match_count: int) -> bool:
+    """True when the typed text is a loose match for the place we kept.
+
+    Multiple Nominatim hits, or a city/town that the user never typed.
+    """
+    if match_count > 1:
+        return True
+    place = " ".join((locality or "").split())
+    if not place:
+        return False
+    typed = " ".join((query or "").split()).casefold()
+    return place.casefold() not in typed
 
 
 def classify(results: list[dict]) -> dict:
