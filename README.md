@@ -29,7 +29,7 @@ Python, FastAPI, one static page. Run with `uvicorn app.main:app`.
 - Fires: NASA FIRMS area CSV for `VIIRS_SNPP_NRT`, `VIIRS_NOAA20_NRT`, and `VIIRS_NOAA21_NRT`, last 3 days. The key is `FIRMS_MAP_KEY`. If it is missing, the score is partial and the page says so.
 - HTTP: `httpx` with a 15s timeout and `tenacity` retries (3 tries, exponential backoff) on timeouts and 429/5xx.
 - Cache: `cache/`, gitignored, keyed by feed and location rounded to 0.01°. `SIMULATE_OUTAGE` or `?simulate_outage=` forces the cache path.
-- Page: one HTML file, Inter from a single Google Fonts stylesheet, light background, black and white. Checklist state is in `localStorage`.
+- Page: one dark HTML file. A globe (globe.gl) is the location control and defaults to the Berkeley hills at 37.87, −122.23. Click the Earth or search an address. The hero is the risk band. Fosberg is broken out under it, with two standing notes: POWER’s ~3 day lag (and dropped −999 fills) and the refinery-flare filter. The hardening checklist stays behind a disclosure. Its state is in `localStorage`.
 
 NIFC WFIGS current incidents are queried when the score runs, and named incidents within 70 km are shown if that feed answers. Prescribed burns stay in the list and are labeled RX. They are not required for the score.
 
