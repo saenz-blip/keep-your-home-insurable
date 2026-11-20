@@ -52,9 +52,10 @@
 
     <form id="lookup">
       <label for="address">Location</label>
-      <div class="search">
-        <input id="address" name="address" type="text" autocomplete="street-address" placeholder="Type an address" spellcheck="false">
+      <div class="search" style="position:relative">
+        <input id="address" name="address" type="text" autocomplete="off" placeholder="Type an address" spellcheck="false" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="suggest">
         <button type="submit">Look up</button>
+        <ul id="suggest" role="listbox" hidden style="position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:1000;margin:0;padding:4px 0;list-style:none;background:#14130f;border:1px solid rgba(255,255,255,0.12);border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.45);font-family:Inter,system-ui,sans-serif;font-size:14px;max-height:260px;overflow:auto"></ul>
       </div>
       <div class="examples" id="examples"></div>
       <p class="status" id="status" role="status"></p>

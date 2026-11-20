@@ -722,6 +722,135 @@ async function lookup(params) {
   }
 }
 
+// --- Address autocomplete (Photon) -------------------------------------------
+const suggestEl = document.querySelector("#suggest");
+let suggestItems = [];
+let suggestIndex = -1;
+let suggestTimer = null;
+let suggestSeq = 0;
+
+function photonLabel(props) {
+  const p = props || {};
+  const street = [p.housenumber, p.street || (p.housenumber ? "" : p.name)].filter(Boolean).join(" ");
+  const city = p.city || p.town || p.village || p.county || "";
+  const parts = [street || p.name, city, p.state].filter(Boolean);
+  return [...new Set(parts)].join(", ");
+}
+
+function closeSuggest() {
+  if (!suggestEl) return;
+  suggestEl.hidden = true;
+  suggestEl.replaceChildren();
+  suggestItems = [];
+  suggestIndex = -1;
+  addressInput.setAttribute("aria-expanded", "false");
+}
+
+function highlightSuggest(index) {
+  suggestIndex = index;
+  [...suggestEl.children].forEach((li, i) => {
+    const on = i === index;
+    li.setAttribute("aria-selected", String(on));
+    li.style.background = on ? "rgba(255,255,255,0.08)" : "transparent";
+  });
+}
+
+function pickSuggest(index) {
+  const item = suggestItems[index];
+  if (!item) return;
+  addressInput.value = item.label;
+  closeSuggest();
+  lookup({ lat: item.lat, lon: item.lon, address: item.label });
+}
+
+function showSuggest(items) {
+  if (!suggestEl) return;
+  suggestItems = items;
+  suggestEl.replaceChildren();
+  if (!items.length) {
+    closeSuggest();
+    return;
+  }
+  items.forEach((item, i) => {
+    const li = document.createElement("li");
+    li.role = "option";
+    li.id = `suggest-${i}`;
+    li.textContent = item.label;
+    li.style.cssText = "padding:8px 12px;cursor:pointer;color:var(--ink,#f3efe6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
+    li.addEventListener("mouseenter", () => highlightSuggest(i));
+    li.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      pickSuggest(i);
+    });
+    suggestEl.appendChild(li);
+  });
+  suggestEl.hidden = false;
+  addressInput.setAttribute("aria-expanded", "true");
+  highlightSuggest(-1);
+}
+
+async function fetchSuggest(text) {
+  const seq = ++suggestSeq;
+  try {
+    const url = new URL("https://photon.komoot.io/api/");
+    url.searchParams.set("q", text);
+    url.searchParams.set("limit", "5");
+    url.searchParams.set("lang", "en");
+    url.searchParams.set("bbox", "-125,24,-66,50");
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("photon");
+    const body = await response.json();
+    if (seq !== suggestSeq) return;
+    const items = (body.features || [])
+      .map((feature) => {
+        const coords = feature?.geometry?.coordinates || [];
+        return { label: photonLabel(feature.properties), lon: Number(coords[0]), lat: Number(coords[1]) };
+      })
+      .filter((item) => item.label && Number.isFinite(item.lat) && Number.isFinite(item.lon))
+      .slice(0, 5);
+    showSuggest(items);
+  } catch {
+    if (seq === suggestSeq) closeSuggest();
+  }
+}
+
+if (suggestEl) {
+  addressInput.addEventListener("input", () => {
+    clearTimeout(suggestTimer);
+    const text = addressInput.value.trim();
+    if (text.length < 3) {
+      suggestSeq++;
+      closeSuggest();
+      return;
+    }
+    suggestTimer = setTimeout(() => fetchSuggest(text), 300);
+  });
+  addressInput.addEventListener("keydown", (event) => {
+    if (suggestEl.hidden || !suggestItems.length) return;
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      highlightSuggest((suggestIndex + 1) % suggestItems.length);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      highlightSuggest(suggestIndex <= 0 ? suggestItems.length - 1 : suggestIndex - 1);
+    } else if (event.key === "Enter" && suggestIndex >= 0) {
+      event.preventDefault();
+      pickSuggest(suggestIndex);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      closeSuggest();
+    }
+  });
+  document.addEventListener("click", (event) => {
+    if (!event.target.closest || !event.target.closest(".search")) closeSuggest();
+  });
+  form.addEventListener("submit", () => {
+    suggestSeq++;
+    clearTimeout(suggestTimer);
+    closeSuggest();
+  });
+}
+
 form.addEventListener("submit", (event) => {
   event.preventDefault();
   const address = addressInput.value.trim();
