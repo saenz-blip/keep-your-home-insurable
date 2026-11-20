@@ -34,6 +34,8 @@ const examplesEl = document.querySelector("#examples");
 const checklistEl = document.querySelector("#checklist");
 const checklistWrap = document.querySelector("#checklist-wrap");
 const legendEl = document.querySelector("#legend");
+const extrasEl = document.querySelector("#extras");
+let fireMap = null;
 
 const placeEl = document.querySelector("#place");
 const coordsEl = document.querySelector("#coords");
@@ -232,6 +234,251 @@ function renderBreakdown(day) {
   ).join("");
 }
 
+function rawText(raw) {
+  if (!raw || !Object.keys(raw).length) return "—";
+  return Object.entries(raw).map(([key, value]) => `${key} ${value ?? "—"}`).join(" · ");
+}
+
+function aerialUrl(lat, lon) {
+  const dlat = 0.0018;
+  const dlon = 0.0018 / Math.cos((lat * Math.PI) / 180);
+  const bbox = [lon - dlon, lat - dlat, lon + dlon, lat + dlat].map((n) => n.toFixed(6)).join(",");
+  return `https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPImagery/ImageServer/exportImage?bbox=${bbox}&bboxSR=4326&imageSR=3857&size=800,800&format=jpg&f=image`;
+}
+
+function aerialBlock(data) {
+  const lat = data.address && data.address.lat;
+  const lon = data.address && data.address.lon;
+  if (lat == null || lon == null) return "";
+  return `
+    <figure class="aerial" id="aerial">
+      <div class="aerial-frame">
+        <img alt="Aerial photo of the address" src="${esc(aerialUrl(lat, lon))}">
+        <span class="crosshair" aria-hidden="true"></span>
+      </div>
+      <figcaption>Aerial photo: USDA NAIP via USGS, ~1 m resolution, updated every 2–3 years. Not today's image.</figcaption>
+    </figure>`;
+}
+
+function utcDay(daysAgo) {
+  const day = new Date();
+  day.setUTCDate(day.getUTCDate() - daysAgo);
+  return day.toISOString().slice(0, 10);
+}
+
+function orbitUrl(lat, lon, day) {
+  const dLat = 0.27;
+  const dLon = 0.27 / Math.cos((lat * Math.PI) / 180);
+  const bbox = [lat - dLat, lon - dLon, lat + dLat, lon + dLon].map((n) => n.toFixed(5)).join(",");
+  const layers = [
+    "VIIRS_NOAA20_CorrectedReflectance_TrueColor",
+    "VIIRS_NOAA20_Thermal_Anomalies_375m_All",
+    "VIIRS_NOAA21_Thermal_Anomalies_375m_All",
+  ].join(",");
+  return "https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi"
+    + "?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&CRS=EPSG:4326"
+    + `&BBOX=${bbox}&WIDTH=800&HEIGHT=800&FORMAT=image/png&TIME=${day}`
+    + `&LAYERS=${layers}&STYLES=`;
+}
+
+function orbitBlock() {
+  return `
+    <figure class="orbit" id="orbit">
+      <h2>Today from orbit</h2>
+      <img alt="Today from orbit">
+      <figcaption></figcaption>
+    </figure>`;
+}
+
+function watchOrbit(figure, data) {
+  const img = figure && figure.querySelector("img");
+  if (!img || !data.address) return;
+  const lat = data.address.lat;
+  const lon = data.address.lon;
+  const caption = figure.querySelector("figcaption");
+  const today = utcDay(0);
+  const yesterday = utcDay(1);
+  let triedYesterday = false;
+  const show = (day) => {
+    caption.textContent = `NASA VIIRS true color + fire detections, ${day}.`;
+    img.src = orbitUrl(lat, lon, day);
+  };
+  img.addEventListener("error", () => {
+    if (!triedYesterday) {
+      triedYesterday = true;
+      show(yesterday);
+      return;
+    }
+    figure.hidden = true;
+  });
+  show(today);
+}
+
+function aerialLooksBlank(img) {
+  const canvas = document.createElement("canvas");
+  const size = 24;
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0, size, size);
+  const data = ctx.getImageData(0, 0, size, size).data;
+  let min = 255;
+  let max = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    const value = (data[i] + data[i + 1] + data[i + 2]) / 3;
+    if (value < min) min = value;
+    if (value > max) max = value;
+  }
+  return max - min < 8;
+}
+
+function watchAerial(figure) {
+  const img = figure && figure.querySelector("img");
+  if (!img) return;
+  const hide = () => { figure.hidden = true; };
+  img.addEventListener("error", hide);
+  img.addEventListener("load", () => {
+    const probe = new Image();
+    probe.crossOrigin = "anonymous";
+    probe.onload = () => {
+      try {
+        if (aerialLooksBlank(probe)) hide();
+      } catch {
+        // Pixel read failed. The photo itself loaded, so leave it up.
+      }
+    };
+    probe.src = img.src;
+  });
+}
+
+function dotIcon(kind) {
+  const muted = kind !== "kept";
+  return L.divIcon({
+    className: muted ? "dot-muted" : "dot-kept",
+    iconSize: muted ? [8, 8] : [10, 10],
+    iconAnchor: muted ? [4, 4] : [5, 5],
+  });
+}
+
+function addPoint(layer, point, kind) {
+  if (point == null || point.lat == null || point.lon == null) return;
+  const marker = L.marker([point.lat, point.lon], { icon: dotIcon(kind), keyboard: false });
+  const bits = [kind === "kept" ? "Used in the score" : "Filtered"];
+  if (point.frp != null) bits.push(`FRP ${point.frp} MW`);
+  if (point.max_frp != null) bits.push(`max FRP ${point.max_frp} MW`);
+  if (point.distance_km != null) bits.push(`${point.distance_km} km`);
+  if (point.site) bits.push(point.site);
+  if (point.reason) bits.push(point.reason);
+  marker.bindTooltip(bits.join(" · "));
+  marker.addTo(layer);
+}
+
+function renderMap(data) {
+  if (fireMap) {
+    fireMap.remove();
+    fireMap = null;
+  }
+  const el = document.querySelector("#map");
+  if (!el || !window.L || !data.address) return;
+  const lat = data.address.lat;
+  const lon = data.address.lon;
+  fireMap = L.map(el, { scrollWheelZoom: false }).setView([lat, lon], 9);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 18,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  }).addTo(fireMap);
+  const rings = [
+    { km: 50, opacity: 0.04 },
+    { km: 15, opacity: 0.08 },
+    { km: 5, opacity: 0.14 },
+  ];
+  for (const ring of rings) {
+    L.circle([lat, lon], {
+      radius: ring.km * 1000,
+      color: "#EDEBE6",
+      weight: 1,
+      fillColor: "#EDEBE6",
+      fillOpacity: ring.opacity,
+    }).bindTooltip(`${ring.km} km · fire proximity gradient`).addTo(fireMap);
+  }
+  const summary = data.fire_summary || {};
+  for (const point of summary.industrial_points || []) addPoint(fireMap, point, "industrial");
+  for (const point of summary.low_confidence_points || data.low_confidence || []) addPoint(fireMap, point, "low");
+  for (const point of summary.possible_static || []) addPoint(fireMap, point, "low-frp");
+  for (const point of summary.kept || data.fires || []) addPoint(fireMap, point, "kept");
+  L.marker([lat, lon], {
+    icon: L.divIcon({ className: "home-mark", iconSize: [14, 14], iconAnchor: [7, 7] }),
+    keyboard: false,
+    zIndexOffset: 1000,
+  }).bindTooltip(data.address.label || "Address").addTo(fireMap);
+  fireMap.fitBounds(L.latLng(lat, lon).toBounds(50000), { padding: [18, 18] });
+  setTimeout(() => fireMap && fireMap.invalidateSize(), 0);
+}
+
+function fillExtras() {
+  if (!report || !extrasEl) return;
+  const day = activeDay();
+  if (!day) {
+    extrasEl.hidden = true;
+    return;
+  }
+  extrasEl.hidden = false;
+  const rows = (day.breakdown || []).map((item) => `
+    <tr>
+      <td>${esc(item.label)}${item.available ? "" : " (left out)"}</td>
+      <td>${esc(rawText(item.raw_input))}</td>
+      <td>${item.normalized ?? "—"}</td>
+      <td>${item.effective_weight ?? item.weight}</td>
+      <td>${item.contribution ?? "—"}</td>
+    </tr>`).join("");
+  const firesHtml = (report.fires || []).map((fire) => {
+    const incident = fire.incident
+      ? ` · ${esc(fire.incident.name)} (${esc(fire.incident.type_label)})`
+      : "";
+    return `<div class="fire">${fire.distance_km} km / ${fire.distance_mi} mi ${esc(fire.bearing)} · FRP ${fire.frp ?? "—"} MW · ${esc(fire.confidence)} · ${esc(fire.satellite)} ${esc(fire.acq_date)} ${esc(fire.acq_time)}${incident}</div>`;
+  }).join("") || `<p class="meta">${esc((report.fire_summary && report.fire_summary.available) ? "No detection left after filtering." : "Satellite detections were not used in this score.")}</p>`;
+  const summary = report.fire_summary || {};
+  const sites = (summary.industrial_by_site || []).map((site) => `${esc(site.name)} (${site.count})`).join(", ");
+  const feeds = (report.feeds || []).map((feed) => `
+    <div class="feed"><strong>${esc(feed.label)}</strong> · ${esc(feed.status)} · ${esc(feed.age_label)} · dropped ${feed.dropped}
+      ${(feed.notes || []).map((note) => `<div class="meta">${esc(note)}</div>`).join("")}
+    </div>`).join("");
+  const incidents = (report.incidents || []).map((item) =>
+    `<div class="fire">${esc(item.name)} · ${esc(item.type || "—")} ${esc(item.type_label)} · ${item.acres ?? "—"} acres · ${item.percent_contained ?? "—"}% contained · ${item.distance_km} km ${esc(item.bearing)}</div>`
+  ).join("");
+  const reasons = (report.partial_reasons || []).map((reason) => `<div class="meta">${esc(reason)}</div>`).join("");
+  const addressLine = report.address && report.address.did_you_mean
+    ? `<p class="did-you-mean">Did you mean: ${esc(report.address.label)}?</p>`
+    : "";
+  extrasEl.innerHTML = `
+    ${addressLine}
+    <p class="alert">${esc(report.alert || "")}</p>
+    ${report.banner ? `<p class="banner">${esc(report.banner)}</p>` : ""}
+    ${reasons}
+    <h2>Score breakdown · ${esc(day.label)}</h2>
+    <table>
+      <thead><tr><th>Component</th><th>Input</th><th>0–100</th><th>Weight</th><th>Points</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    ${aerialBlock(report)}
+    ${orbitBlock()}
+    <h2>Fire proximity gradient</h2>
+    <div class="map-block">
+      <div id="map" role="region" aria-label="Fire proximity gradient"></div>
+      <p class="meta">Fire proximity gradient at 5, 15, and 50 km. Orange dots are detections used in the score. Gray dots were filtered out (industrial flares, low confidence, or persistent low-FRP heat).</p>
+    </div>
+    <h2>Nearby satellite detections</h2>
+    ${firesHtml}
+    <p class="meta">Filtered industrial ${summary.industrial_count || 0}${sites ? ": " + sites : ""}. Low confidence ${summary.low_confidence_count || 0}. Possible static heat ${summary.possible_static_count || 0}. Kept ${summary.kept_count || 0}.</p>
+    ${incidents ? `<h2>Named incidents</h2>${incidents}` : ""}
+    <h2>Data freshness</h2>
+    ${feeds}
+    <p class="meta">${esc(report.disclaimer || "")}</p>`;
+  watchAerial(extrasEl.querySelector("#aerial"));
+  watchOrbit(extrasEl.querySelector("#orbit"), report);
+  try { renderMap(report); } catch (err) { console.error(err); }
+}
+
 function renderDays() {
   const days = report?.days || [];
   if (!days.length) {
@@ -289,6 +536,7 @@ function draw() {
   renderDays();
   renderBreakdown(day);
   renderNotes(report);
+  fillExtras();
   if (report.disclaimer) footEl.textContent = report.disclaimer;
 }
 
