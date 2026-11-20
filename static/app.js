@@ -181,6 +181,19 @@ function syncGlobe(lat, lon, fires) {
   legendEl.textContent = lines.join(" ");
 }
 
+const STATE_ABBR = {Alabama:"AL",Alaska:"AK",Arizona:"AZ",Arkansas:"AR",California:"CA",Colorado:"CO",Connecticut:"CT",Delaware:"DE",Florida:"FL",Georgia:"GA",Hawaii:"HI",Idaho:"ID",Illinois:"IL",Indiana:"IN",Iowa:"IA",Kansas:"KS",Kentucky:"KY",Louisiana:"LA",Maine:"ME",Maryland:"MD",Massachusetts:"MA",Michigan:"MI",Minnesota:"MN",Mississippi:"MS",Missouri:"MO",Montana:"MT",Nebraska:"NE",Nevada:"NV","New Hampshire":"NH","New Jersey":"NJ","New Mexico":"NM","New York":"NY","North Carolina":"NC","North Dakota":"ND",Ohio:"OH",Oklahoma:"OK",Oregon:"OR",Pennsylvania:"PA","Rhode Island":"RI","South Carolina":"SC","South Dakota":"SD",Tennessee:"TN",Texas:"TX",Utah:"UT",Vermont:"VT",Virginia:"VA",Washington:"WA","West Virginia":"WV",Wisconsin:"WI",Wyoming:"WY","District of Columbia":"DC"};
+
+function shortPlace(label) {
+  const parts = String(label || "").split(",").map((p) => p.trim()).filter(Boolean);
+  const si = parts.findIndex((p) => STATE_ABBR[p]);
+  if (si < 0) return label;
+  const state = STATE_ABBR[parts[si]];
+  let ci = si - 1;
+  if (ci >= 0 && /County$/i.test(parts[ci]) && ci - 1 >= 1) ci -= 1;
+  const city = ci >= 0 ? parts[ci] : "";
+  return city ? `${city}, ${state}` : state;
+}
+
 function insurabilitySentence(name, place) {
   const writer = INSURABILITY[name];
   if (writer) return writer(place);
@@ -562,7 +575,7 @@ function draw() {
   renderInsuranceBox(key);
 
   const custom = report.plain_language_takeaway;
-  takeawayEl.textContent = custom || insurabilitySentence(TIER_LABELS[key] || name, place);
+  takeawayEl.textContent = custom || insurabilitySentence(TIER_LABELS[key] || name, shortPlace(place));
   renderDays();
   renderBreakdown(day);
   renderNotes(report);
