@@ -760,7 +760,8 @@ function pickSuggest(index) {
   if (!item) return;
   addressInput.value = item.label;
   closeSuggest();
-  lookup({ lat: item.lat, lon: item.lon, address: item.label });
+  if (item.geocode) lookup({ address: item.label });
+  else lookup({ lat: item.lat, lon: item.lon, address: item.label });
 }
 
 function showSuggest(items) {
@@ -789,26 +790,74 @@ function showSuggest(items) {
   highlightSuggest(-1);
 }
 
+function photonUrl(text, extra) {
+  const url = new URL("https://photon.komoot.io/api/");
+  url.searchParams.set("q", text);
+  url.searchParams.set("limit", "5");
+  url.searchParams.set("lang", "en");
+  url.searchParams.set("bbox", "-125,24,-66,50");
+  // Favor places near the last looked-up spot (or the default view) so a
+  // bare "2739 durant" finds the nearby street without a city or state.
+  const here = report?.address || {};
+  const lat = here.lat != null ? here.lat : DEFAULT_LAT;
+  const lon = here.lon != null ? here.lon : DEFAULT_LON;
+  url.searchParams.set("lat", String(lat));
+  url.searchParams.set("lon", String(lon));
+  for (const [key, value] of Object.entries(extra || {})) url.searchParams.set(key, value);
+  return url;
+}
+
+async function photonFeatures(text, extra) {
+  const response = await fetch(photonUrl(text, extra));
+  if (!response.ok) throw new Error("photon");
+  const body = await response.json();
+  return body.features || [];
+}
+
+function featureItem(feature) {
+  const coords = feature?.geometry?.coordinates || [];
+  return { label: photonLabel(feature.properties), lon: Number(coords[0]), lat: Number(coords[1]) };
+}
+
 async function fetchSuggest(text) {
   const seq = ++suggestSeq;
   try {
-    const url = new URL("https://photon.komoot.io/api/");
-    url.searchParams.set("q", text);
-    url.searchParams.set("limit", "5");
-    url.searchParams.set("lang", "en");
-    url.searchParams.set("bbox", "-125,24,-66,50");
-    const response = await fetch(url);
-    if (!response.ok) throw new Error("photon");
-    const body = await response.json();
+    const numbered = text.match(/^(\d+[A-Za-z]?)\s+(.{2,})$/);
+    const [full, streets] = await Promise.all([
+      photonFeatures(text),
+      numbered ? photonFeatures(numbered[2], { layer: "street" }).catch(() => []) : Promise.resolve([]),
+    ]);
     if (seq !== suggestSeq) return;
-    const items = (body.features || [])
-      .map((feature) => {
-        const coords = feature?.geometry?.coordinates || [];
-        return { label: photonLabel(feature.properties), lon: Number(coords[0]), lat: Number(coords[1]) };
-      })
-      .filter((item) => item.label && Number.isFinite(item.lat) && Number.isFinite(item.lon))
-      .slice(0, 5);
-    showSuggest(items);
+    const items = [];
+    const seen = new Set();
+    const add = (item) => {
+      const key = item.label.toLowerCase();
+      if (!item.label || seen.has(key)) return;
+      seen.add(key);
+      items.push(item);
+    };
+    // Exact house-number hits first, then the typed number on nearby streets
+    // (resolved by the server's geocoder), then anything else Photon found.
+    const exact = [];
+    const other = [];
+    for (const feature of full) {
+      const item = featureItem(feature);
+      if (!Number.isFinite(item.lat) || !Number.isFinite(item.lon)) continue;
+      const num = feature?.properties?.housenumber;
+      if (numbered && num && String(num).toLowerCase() === numbered[1].toLowerCase()) exact.push(item);
+      else other.push(item);
+    }
+    exact.forEach(add);
+    if (numbered) {
+      for (const feature of streets) {
+        const p = feature.properties || {};
+        const city = p.city || p.town || p.village || p.county || "";
+        const label = [`${numbered[1]} ${p.name || p.street || ""}`.trim(), city, p.state].filter(Boolean).join(", ");
+        add({ label, geocode: true });
+      }
+    }
+    other.forEach(add);
+    showSuggest(items.slice(0, 5));
   } catch {
     if (seq === suggestSeq) closeSuggest();
   }
