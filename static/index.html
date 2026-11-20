@@ -16,6 +16,11 @@
     .suggest-foot { padding:6px 12px 4px; border-top:1px solid rgba(255,255,255,0.08); margin-top:4px; color:rgba(243,239,230,0.4); font-family:var(--mono, monospace); font-size:10.5px; letter-spacing:.04em; cursor:default; }
     .search button[type="submit"][aria-busy="true"] { opacity:.85; cursor:progress; }
     .status.is-working { color:rgba(243,239,230,0.85); }
+    @keyframes kyhi-bounce { 0%,100% { transform: translateY(0); } 50% { transform: translateY(3px); } }
+    .kyhi-bounce { display:inline-block; color:#ff7800; animation:kyhi-bounce 1.4s ease-in-out infinite; }
+    .jump-chip { font:inherit; font-family:var(--mono, monospace); font-size:11px; letter-spacing:.03em; padding:4px 9px; border-radius:999px; border:1px solid rgba(255,255,255,0.16); background:transparent; color:inherit; cursor:pointer; }
+    .jump-chip:hover, .jump-chip:focus-visible { border-color:#ff7800; color:#ffb070; }
+    #imagery-teaser[hidden] { display:none !important; }
   </style>
 </head>
 <body>
@@ -40,6 +45,19 @@
         <p id="insurance-box-text" style="margin:0;line-height:1.4"></p>
       </section>
       <p class="takeaway" id="takeaway">Reading public weather and satellite feeds for this pin.</p>
+      <div id="imagery-teaser" hidden style="margin:16px 0 4px;max-width:46ch;display:flex;gap:12px;align-items:center;padding:10px;border:1px solid rgba(255,255,255,0.12);border-radius:12px;background:rgba(255,255,255,0.04)">
+        <button type="button" data-jump="aerial" aria-label="Jump to the aerial photo of your home" style="flex:none;width:72px;height:72px;padding:0;border:1px solid rgba(255,255,255,0.18);border-radius:8px;overflow:hidden;background:#111;cursor:pointer">
+          <img id="imagery-thumb" alt="" style="width:100%;height:100%;object-fit:cover;display:block">
+        </button>
+        <div style="min-width:0">
+          <p style="margin:0 0 6px;font-weight:600">See your home from above <span class="kyhi-bounce" aria-hidden="true">↓</span></p>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            <button type="button" class="jump-chip" data-jump="aerial">Aerial photo</button>
+            <button type="button" class="jump-chip" data-jump="orbit">Today from orbit</button>
+            <button type="button" class="jump-chip" data-jump="map">Fire map</button>
+          </div>
+        </div>
+      </div>
     </section>
 
     <div class="days" id="days" hidden></div>

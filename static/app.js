@@ -570,6 +570,29 @@ const INSURANCE_BOX = {
   extreme: "Active fire nearby. Insurers often pause new policies in this area until it is contained.",
 };
 
+function renderImageryTeaser(data) {
+  const teaser = document.querySelector("#imagery-teaser");
+  if (!teaser) return;
+  const lat = data?.address?.lat;
+  const lon = data?.address?.lon;
+  if (lat == null || lon == null) {
+    teaser.hidden = true;
+    return;
+  }
+  const thumb = document.querySelector("#imagery-thumb");
+  if (thumb) thumb.src = aerialUrl(lat, lon).replace("size=800,800", "size=160,160");
+  teaser.hidden = false;
+}
+
+document.addEventListener("click", (event) => {
+  const trigger = event.target.closest && event.target.closest("[data-jump]");
+  if (!trigger) return;
+  const target = document.getElementById(trigger.dataset.jump);
+  if (!target) return;
+  const block = trigger.dataset.jump === "map" ? target.closest(".map-block") || target : target;
+  block.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "center" });
+});
+
 function renderInsuranceBox(key) {
   const box = document.querySelector("#insurance-box");
   const text = document.querySelector("#insurance-box-text");
@@ -600,6 +623,7 @@ function draw() {
   if (flag?.available && flag.normalized >= 100) bits.push("red flag");
   tierMetaEl.textContent = bits.length ? bits.join(" · ") : "Insurance risk signal";
   renderInsuranceBox(key);
+  renderImageryTeaser(report);
 
   const custom = report.plain_language_takeaway;
   takeawayEl.textContent = custom || insurabilitySentence(TIER_LABELS[key] || name, shortPlace(place));
