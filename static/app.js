@@ -402,8 +402,8 @@ let houseZoomToken = 0;
 
 function zoomToHouse(lat, lon, token) {
   if (token !== houseZoomToken || !fireMap || !window.L || lat == null || lon == null) return;
-  const section = document.querySelector("#map");
-  if (section) section.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "center" });
+  const section = document.querySelector(".hero");
+  if (section) section.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "start" });
   if (fireBase) fireMap.removeLayer(fireBase);
   fireBase = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
     maxZoom: 19,
