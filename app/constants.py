@@ -19,8 +19,15 @@ SECOND_EXAMPLE_ADDRESS = "Grizzly Peak Blvd, Berkeley, CA"
 
 USER_AGENT = (
     "KeepYourHomeInsurable/1.0 (educational US wildfire-risk demo; "
-    "Berkeley-Stanford hackathon)"
+    "+https://github.com/saenz-blip/keep-your-home-insurable; "
+    "contact: saenz-blip@users.noreply.github.com)"
 )
+
+# Preset examples carry coordinates so they never need a geocoder.
+DEFAULT_EXAMPLE_LAT = 36.36297
+DEFAULT_EXAMPLE_LON = -82.79874
+SECOND_EXAMPLE_LAT = 37.8826
+SECOND_EXAMPLE_LON = -122.2373
 
 # Two Nominatim hits farther apart than this are treated as different places.
 GEOCODE_AMBIGUOUS_KM = 1.0

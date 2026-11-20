@@ -17,6 +17,10 @@ from fastapi.staticfiles import StaticFiles
 from app.constants import (
     CHECKLIST,
     DEFAULT_EXAMPLE_ADDRESS,
+    DEFAULT_EXAMPLE_LAT,
+    DEFAULT_EXAMPLE_LON,
+    SECOND_EXAMPLE_LAT,
+    SECOND_EXAMPLE_LON,
     DISCLAIMER,
     SECOND_EXAMPLE_ADDRESS,
 )
@@ -54,11 +58,15 @@ def health():
             {
                 "id": "default",
                 "address": DEFAULT_EXAMPLE_ADDRESS,
+                "lat": DEFAULT_EXAMPLE_LAT,
+                "lon": DEFAULT_EXAMPLE_LON,
                 "note": "Greene County, TN",
             },
             {
                 "id": "second",
                 "address": SECOND_EXAMPLE_ADDRESS,
+                "lat": SECOND_EXAMPLE_LAT,
+                "lon": SECOND_EXAMPLE_LON,
                 "note": "Berkeley, CA",
             },
         ],

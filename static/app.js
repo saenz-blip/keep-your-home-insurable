@@ -678,7 +678,11 @@ async function loadMeta() {
     button.textContent = example.address;
     button.addEventListener("click", () => {
       addressInput.value = example.address;
-      form.requestSubmit();
+      if (example.lat != null && example.lon != null) {
+        lookup({ lat: example.lat, lon: example.lon, address: example.address });
+      } else {
+        form.requestSubmit();
+      }
     });
     examplesEl.appendChild(button);
   }
