@@ -1,5 +1,9 @@
 # Keep Your Home Insurable
 
+**Live demo: https://keep-your-home-insurable.onrender.com** (free Render instance: the first load after idle can take about 50 seconds)
+
+Repo: https://github.com/saenz-blip/keep-your-home-insurable
+
 Estimated wildfire risk for a US address, from public weather and satellite data. It is not an insurer's score.
 
 ## Inspiration
@@ -14,6 +18,11 @@ Enter a US address. The page returns:
 2. Nearby satellite heat detections, with distance in km and miles and a compass direction. Known refinery flares are removed. Low-confidence hits and repeated weak nominal hits are listed separately and left out of the score.
 3. The Safer from Wildfires checklist. Checking an item stores it in this browser and re-ranks what is left.
 4. A label on every result: **Estimated risk from public data.** Not the insurer's score.
+5. A dark map of the address with nearby detections and 5 / 15 / 50 km "fire proximity gradient" rings (Leaflet + OpenStreetMap).
+6. A night globe hero (globe.gl) that flies to the address and plots kept detections in orange and filtered flares in gray.
+7. "Today from orbit": NASA GIBS VIIRS true color plus NOAA-20 and NOAA-21 thermal anomalies for today (falls back to yesterday, hides if both fail).
+8. A USDA NAIP aerial photo of the lot (about 1 m, updated every 2–3 years, labeled as not today's image).
+9. A "Did you mean" line when the geocoder's match looks loose.
 
 The default example is Caney Creek Lane, Greene County, TN. The second example is Grizzly Peak Blvd, Berkeley, CA. Both are buttons on the page. Change the default in `DEFAULT_EXAMPLE_ADDRESS` in `app/constants.py`.
 
@@ -29,7 +38,8 @@ Python, FastAPI, one static page. Run with `uvicorn app.main:app`.
 - Fires: NASA FIRMS area CSV for `VIIRS_SNPP_NRT`, `VIIRS_NOAA20_NRT`, and `VIIRS_NOAA21_NRT`, last 3 days. The key is `FIRMS_MAP_KEY`. If it is missing, the score is partial and the page says so.
 - HTTP: `httpx` with a 15s timeout and `tenacity` retries (3 tries, exponential backoff) on timeouts and 429/5xx.
 - Cache: `cache/`, gitignored, keyed by feed and location rounded to 0.01°. `SIMULATE_OUTAGE` or `?simulate_outage=` forces the cache path.
-- Page: one HTML file, Inter from a single Google Fonts stylesheet, light background, black and white. Checklist state is in `localStorage`.
+- Page: Samarth's dark globe.gl shell (Instrument Serif / IBM Plex Mono / Inter) with the score hero, plus the PR #2 sections below it: Leaflet fire-proximity map (5/15/50 km), NASA GIBS "Today from orbit", USDA NAIP aerial, full score breakdown, nearby detections, data freshness, and the Safer from Wildfires checklist in `localStorage`.
+- Deploy: Render free web service from `main`, `uvicorn app.main:app --host 0.0.0.0 --port $PORT`. `FIRMS_MAP_KEY` is a Render secret environment variable, never in the repo. `CACHE_DIR=/tmp/kyhi-cache` keeps the disk cache on a writable path. Every push to `main` redeploys.
 
 NIFC WFIGS current incidents are queried when the score runs, and named incidents within 70 km are shown if that feed answers. Prescribed burns stay in the list and are labeled RX. They are not required for the score.
 
@@ -59,9 +69,9 @@ The daily score is a weighted sum of four 0–100 pieces. Weights live in `SCORE
 | FFWI | 0.55 | The index itself, already 0–100. Day-of fire weather dominates. |
 | Days since meaningful rain | 0.25 | 0 days → 0, 21 days → 100, linear between. 2.5 mm/day is the wetting-rain line (about 0.10 inch). Counted only through the latest valid POWER day. |
 | Nearby detection | 0.12 | 100 within 5 km, 0 at 50 km, linear between. No detection left after filters is 0, which is a real reading. A missing FIRMS feed is left out. |
+| Red Flag Warning | 0.08 | 100 if an NWS Red Flag Warning overlaps that local day, else 0. |
 
 That nearby term is at most 12 points, so a fire a few hundred meters away can still land in Moderate. After the weighted sum, a kept detection of at least 1 MW (not an industrial flare, not a low-confidence hit, not persistent sub-1 MW heat) sets a floor. The published score is the higher of the weighted sum and the floor. Within 2 km the floor is 85 (Extreme). Within 5 km it is 70 (High). From 5 km to 15 km it fades linearly from 70 to 0. At 15 km or with no qualifying detection, the floor is 0. The breakdown has its own "Proximity floor" line with that reason. The numbers are `PROXIMITY_FLOOR_*` in `app/constants.py`.
-| Red Flag Warning | 0.08 | 100 if an NWS Red Flag Warning overlaps that local day, else 0. |
 
 Bands from the rounded score: 0–24 Low, 25–49 Moderate, 50–74 High, 75–100 Extreme. The alert sentence comes from the highest day. It is only the "High risk Saturday…" form when afternoon fire weather exists. Otherwise the line says the estimate is partial.
 
@@ -92,7 +102,7 @@ A live FIRMS read for the Berkeley/Oakland area (about 37.87, −122.23) put the
 
 Separate from that list: a cluster is treated as possible static heat when it has at least two detections within 1 km, every one is nominal confidence with FRP under 1 MW, and they come from two satellites or two days. Those are listed and not scored. One weak detection is not enough to drop. Low-confidence rows are listed separately and not scored.
 
-This environment has no `FIRMS_MAP_KEY`, so the live demo cannot show fresh detections. The filter is covered by `tests/test_firms.py` with an inline CSV string. That string is not used by the app.
+On 19 Nov 2026 the live Berkeley lookup filtered 7 refinery detections (4 Chevron Richmond, 3 Martinez) and set aside 2 low-FRP detections, scoring 10 (Low). The filter is also covered by `tests/test_firms.py` with an inline CSV string, which the app does not use.
 
 ## POWER lag
 
@@ -109,7 +119,7 @@ NASA POWER daily data runs about three days behind. On 19 Nov 2026 a live pull f
 
 ## Accomplishments
 
-Live lookups for Caney Creek Lane, Greene County, TN (36.36297, −82.79874) and Grizzly Peak Blvd, Berkeley, CA return Nominatim, NWS, and POWER data and a score with a full breakdown. The outage switch serves the cached NWS and POWER payloads and labels them as under an hour old. Unit tests cover the Fosberg index against hand-computed values, the flare filter, an all-fill POWER window, and the cache fallback.
+A deployed, public, all-live app. On 19 Nov 2026 the default address, Caney Creek Lane, Greene County, TN (36.36297, −82.79874), sat next to the active "Greene - Caney Creek Lane" wildfire (WF in NIFC WFIGS, not a prescribed burn). It scored 85 (Extreme) with the alert "Active wildfire 0.4 km W (Greene - Caney Creek Lane). Extreme risk today. Clear brush within 30 ft now." Grizzly Peak Blvd, Berkeley, CA scored 10 (Low) with the refinery flares filtered out. Both were checked on the Render deployment, and 32 tests pass. The outage switch serves the cached NWS and POWER payloads and labels them as under an hour old. Unit tests cover the Fosberg index against hand-computed values, the flare filter, an all-fill POWER window, and the cache fallback.
 
 ## What we learned
 
@@ -117,11 +127,11 @@ A fire-weather index is not an insurance rate, and the page has to say so in the
 
 ## What's next
 
-A FIRMS key in the demo environment. A true-color NASA GIBS snapshot behind the address. More of the industrial list only where a live read shows a repeating flare. Evacuation and smoke, still labeled as public data.
+Parcel-level fuel data (vegetation within 30 and 100 ft). Wind-direction-aware fire proximity, since a fire upwind matters more. More of the industrial list only where a live read shows a repeating flare. Evacuation and smoke, still labeled as public data.
 
 ## How Grok Bot helped build it
 
-Grok Bot (this coding agent) wrote the scoring module, the feed clients, the cache and outage switch, the tests, and the page, then ran the live lookups and the test suite in this workspace. The formula, the 2.5 mm rain line, the refinery circles, and the checklist points are documented in `app/constants.py` so a person can check them without trusting the chat.
+The team drove the project from a Grok Bot chat. Grok Bot planned the work, pulled and checked the live feeds itself (raw FIRMS detections, POWER −999 fill days, NWS grids), found the live WF incident used as the demo default through NIFC WFIGS, and verified the GIBS and NAIP image requests before any code used them. It launched and steered a Cursor cloud agent that wrote the code in pull requests ([#1](https://github.com/saenz-blip/keep-your-home-insurable/pull/1), [#2](https://github.com/saenz-blip/keep-your-home-insurable/pull/2)). Before each merge, Grok Bot ran the tests and the Greene TN and Berkeley lookups on its own computer. It also deployed the app to Render through the Render connector, ran scheduled check-ins against the hackathon timeline, and rechecked the fire feeds before the demo. The exported session, with personal details and keys removed, is in [`docs/grok-bot-session.md`](docs/grok-bot-session.md). The formula, the 2.5 mm rain line, the refinery circles, and the checklist points are documented in `app/constants.py` so a person can check them without trusting the chat.
 
 ## How to run it
 
