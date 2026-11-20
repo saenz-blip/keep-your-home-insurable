@@ -4,39 +4,74 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Keep Your Home Insurable</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-  <main class="wrap">
-    <div id="hero" class="hero">
-      <div id="globe" role="img" aria-label="Night Earth"></div>
-    </div>
-    <header>
-      <p class="eyebrow">Estimated risk from public data</p>
-      <h1>Keep Your Home Insurable</h1>
-      <p class="lede" id="disclaimer">This is not an insurer's score.</p>
+  <div id="globe"></div>
+  <div class="veil" aria-hidden="true"></div>
+  <p class="legend" id="legend" hidden>Orange marks are satellite heat kept in the score. Pale marks are refinery flares left out.</p>
+
+  <main id="page">
+    <header class="top">
+      <p class="mark">Keep your home insurable</p>
+      <p class="disclaimer" id="disclaimer">Estimated from public data</p>
     </header>
 
+    <section class="hero" aria-live="polite">
+      <p class="place" id="place">Berkeley hills</p>
+      <p class="coords" id="coords">37.87° N &nbsp; 122.23° W</p>
+      <h1 class="tier" id="tier">—</h1>
+      <p class="tier-meta" id="tier-meta">Insurance risk signal</p>
+      <p class="takeaway" id="takeaway">Reading public weather and satellite feeds for this pin.</p>
+    </section>
+
+    <div class="days" id="days" hidden></div>
+
+    <section class="fosberg-block" aria-labelledby="fosberg-label">
+      <div class="fosberg-head">
+        <p class="kicker" id="fosberg-label">Fosberg</p>
+        <p class="fosberg-score" id="fosberg-score">—</p>
+      </div>
+      <div class="meter" aria-hidden="true"><span id="fosberg-bar"></span></div>
+      <dl class="breakdown" id="breakdown"></dl>
+    </section>
+
+    <ul class="notes" id="notes">
+      <li>POWER data ~3 days behind (filtered −999s)</li>
+      <li>Filtered known industrial heat sources (refinery flares)</li>
+    </ul>
+
     <form id="lookup">
-      <label for="address">US address</label>
-      <div class="row">
-        <input id="address" name="address" type="text" autocomplete="street-address" placeholder="Street, city, state" required>
+      <label for="address">Location</label>
+      <div class="search">
+        <input id="address" name="address" type="text" autocomplete="street-address" placeholder="Address, or click the Earth" spellcheck="false">
         <button type="submit">Look up</button>
       </div>
       <div class="examples" id="examples"></div>
-      <label class="quiet" for="outage">Demo a feed outage</label>
-      <input id="outage" name="simulate_outage" type="text" placeholder="firms, power, nws" spellcheck="false">
+      <p class="status" id="status" role="status"></p>
+      <div id="error" class="error" hidden></div>
+      <details class="quiet-details">
+        <summary>Simulate a feed outage</summary>
+        <input id="outage" name="simulate_outage" type="text" placeholder="firms, power, nws" spellcheck="false">
+      </details>
     </form>
 
-    <p id="status" class="status" role="status"></p>
-    <section id="error" class="error" hidden></section>
-    <section id="results" hidden></section>
-    <section id="checklist"></section>
+    <section id="extras" class="extras" hidden></section>
+
+    <details class="quiet-details" id="checklist-wrap" hidden>
+      <summary>Hardening checklist</summary>
+      <div id="checklist"></div>
+    </details>
+
+    <p class="foot" id="foot">This is not an insurer’s score, a premium, or a prediction that a fire will reach this address.</p>
   </main>
-  <script src="https://unpkg.com/globe.gl@2.41.1/dist/globe.gl.min.js" onerror="var hero=document.getElementById('hero'); if(hero) hero.hidden=true"></script>
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="https://unpkg.com/globe.gl@2.41.1/dist/globe.gl.min.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>
