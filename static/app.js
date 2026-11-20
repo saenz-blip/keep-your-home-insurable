@@ -689,9 +689,43 @@ async function loadMeta() {
   renderChecklist();
 }
 
+const LOOKUP_STEPS = [
+  "Finding the address…",
+  "Reading NASA satellite fire detections…",
+  "Checking humidity, wind, and temperature…",
+  "Checking weather alerts…",
+  "Scoring estimated risk…",
+];
+let lookupTicker = null;
+
+function setLookupBusy(busy, params) {
+  const button = form.querySelector('button[type="submit"]');
+  clearInterval(lookupTicker);
+  lookupTicker = null;
+  if (button) {
+    if (!button.dataset.label) button.dataset.label = button.textContent;
+    button.disabled = busy;
+    button.setAttribute("aria-busy", String(busy));
+    button.innerHTML = busy ? '<span class="kyhi-spinner"></span>Checking…' : esc(button.dataset.label);
+  }
+  statusEl.classList.toggle("is-working", busy);
+  if (!busy) return;
+  let step = params && params.lat != null && params.lon != null ? 1 : 0;
+  const show = () => {
+    statusEl.innerHTML = `<span class="kyhi-spinner"></span>${esc(LOOKUP_STEPS[step])} <span style="opacity:.5">(${step + 1}/${LOOKUP_STEPS.length})</span>`;
+  };
+  show();
+  lookupTicker = setInterval(() => {
+    if (step < LOOKUP_STEPS.length - 1) {
+      step += 1;
+      show();
+    }
+  }, 1600);
+}
+
 async function lookup(params) {
   page.classList.add("is-loading");
-  statusEl.textContent = "Reading public feeds";
+  setLookupBusy(true, params);
   errorEl.hidden = true;
   const url = new URL("/api/risk", location.origin);
   if (params.address) url.searchParams.set("address", params.address);
@@ -703,6 +737,7 @@ async function lookup(params) {
   try {
     const response = await fetch(url);
     const body = await response.json();
+    setLookupBusy(false);
     statusEl.textContent = "";
     if (!body.ok) showError(body);
     else {
@@ -715,9 +750,11 @@ async function lookup(params) {
       setTimeout(() => zoomToHouse(point.lat, point.lon, token), 2200);
     }
   } catch {
+    setLookupBusy(false);
     statusEl.textContent = "";
     showError({ message: "The page could not read a result. No score was invented." });
   } finally {
+    setLookupBusy(false);
     page.classList.remove("is-loading");
   }
 }
@@ -764,12 +801,21 @@ function pickSuggest(index) {
   else lookup({ lat: item.lat, lon: item.lon, address: item.label });
 }
 
+function showSuggestNote(html) {
+  if (!suggestEl) return;
+  suggestItems = [];
+  suggestIndex = -1;
+  suggestEl.innerHTML = `<li class="suggest-note" role="presentation">${html}</li>`;
+  suggestEl.hidden = false;
+  addressInput.setAttribute("aria-expanded", "true");
+}
+
 function showSuggest(items) {
   if (!suggestEl) return;
   suggestItems = items;
   suggestEl.replaceChildren();
   if (!items.length) {
-    closeSuggest();
+    showSuggestNote("No matching address yet. Press Enter to check it anyway.");
     return;
   }
   items.forEach((item, i) => {
@@ -785,6 +831,11 @@ function showSuggest(items) {
     });
     suggestEl.appendChild(li);
   });
+  const foot = document.createElement("li");
+  foot.className = "suggest-foot";
+  foot.setAttribute("role", "presentation");
+  foot.textContent = "↑ ↓ to choose · Enter to check risk · Esc to close";
+  suggestEl.appendChild(foot);
   suggestEl.hidden = false;
   addressInput.setAttribute("aria-expanded", "true");
   highlightSuggest(-1);
@@ -872,6 +923,7 @@ if (suggestEl) {
       closeSuggest();
       return;
     }
+    showSuggestNote('<span class="kyhi-spinner"></span>Searching addresses…');
     suggestTimer = setTimeout(() => fetchSuggest(text), 300);
   });
   addressInput.addEventListener("keydown", (event) => {
