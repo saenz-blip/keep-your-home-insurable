@@ -3,12 +3,6 @@ const DEFAULT_LAT = 37.87;
 const DEFAULT_LON = -122.23;
 const DEFAULT_PLACE = "Berkeley hills";
 
-const REFINERIES = [
-  { lat: 37.9415, lon: -122.395 },
-  { lat: 38.02, lon: -122.085 },
-  { lat: 38.072, lon: -122.1382 },
-];
-
 const TIER_LABELS = {
   low: "Low",
   moderate: "Moderate",
@@ -39,9 +33,9 @@ const errorEl = document.querySelector("#error");
 const examplesEl = document.querySelector("#examples");
 const checklistEl = document.querySelector("#checklist");
 const checklistWrap = document.querySelector("#checklist-wrap");
+const legendEl = document.querySelector("#legend");
 const extrasEl = document.querySelector("#extras");
 let fireMap = null;
-const legendEl = document.querySelector("#legend");
 
 const placeEl = document.querySelector("#place");
 const coordsEl = document.querySelector("#coords");
@@ -136,7 +130,7 @@ function mountGlobe() {
     controls.enablePan = false;
     controls.rotateSpeed = 0.45;
     controls.zoomSpeed = 0.55;
-    controls.minDistance = 170;
+    controls.minDistance = 150;
     controls.maxDistance = 520;
     window.addEventListener("resize", fitGlobe);
   } catch {
@@ -146,35 +140,34 @@ function mountGlobe() {
 
 function syncGlobe(lat, lon, fires) {
   if (!globe || lat == null || lon == null) return;
-  globe
-    .htmlElementsData([{ lat, lng: lon }])
-    .htmlLat("lat")
-    .htmlLng("lng")
-    .htmlAltitude(0.012)
-    .htmlElement(() => {
-      const marker = document.createElement("div");
-      marker.className = "pin";
-      return marker;
-    });
-
   const heat = (fires || [])
     .filter((fire) => fire.lat != null && fire.lon != null)
     .map((fire) => ({ lat: fire.lat, lng: fire.lon, kind: "heat" }));
-  const flares = nearBay(lat, lon)
-    ? REFINERIES.map((site) => ({ lat: site.lat, lng: site.lon, kind: "flare" }))
-    : [];
+  const showFlares = nearBay(lat, lon);
   globe
-    .pointsData([...flares, ...heat])
-    .pointLat("lat")
-    .pointLng("lng")
-    .pointColor((point) => (point.kind === "flare" ? "rgba(214, 214, 206, 0.9)" : "#e07a3d"))
-    .pointAltitude(0.012)
-    .pointRadius((point) => (point.kind === "flare" ? 0.16 : 0.28))
-    .pointLabel((point) => (point.kind === "flare" ? "Excluded refinery flare" : "Satellite heat kept in the score"));
+    .pointsData([])
+    .htmlElementsData([{ lat, lng: lon, kind: "pin" }, ...heat])
+    .htmlLat("lat")
+    .htmlLng("lng")
+    .htmlAltitude(0.012)
+    .htmlElement((point) => {
+      const marker = document.createElement("div");
+      marker.className = point.kind === "pin" ? "pin" : `dot dot-${point.kind}`;
+      marker.title = point.kind === "heat"
+        ? "Satellite heat kept in the score"
+        : point.kind === "flare"
+          ? "Refinery flare left out"
+          : "Selected location";
+      return marker;
+    });
 
-  const altitude = nearBay(lat, lon) ? 1.02 : 1.4;
+  const altitude = nearBay(lat, lon) ? 1.05 : 1.45;
   globe.pointOfView({ lat, lng: lon, altitude }, reducedMotion() ? 0 : 900);
-  legendEl.hidden = !nearBay(lat, lon);
+  const lines = ["Bright pin is this address."];
+  if (heat.length || showFlares) lines.push("Orange marks are satellite heat kept in the score.");
+  if (showFlares) lines.push("Refinery flares are left out of the score.");
+  legendEl.hidden = false;
+  legendEl.textContent = lines.join(" ");
 }
 
 function insurabilitySentence(name, place) {
@@ -187,29 +180,26 @@ function powerNote(data) {
   const lead = "POWER data ~3 days behind (filtered −999s).";
   const feed = (data.feeds || []).find((item) => item.id === "power");
   const notes = feed?.notes || [];
-  const extra = [
-    notes.find((note) => /fill values|unusable/i.test(note)),
-    notes.find((note) => /^Latest valid POWER day/i.test(note)),
-  ].filter(Boolean);
-  if (data.power_lag_note && !notes.length) return data.power_lag_note;
-  return [lead, ...extra].join(" ");
+  if (!feed || feed.status === "unavailable") return `${lead} Rain history left out.`;
+  const dropped = notes.find((note) => /fill values/i.test(note));
+  const latest = notes.find((note) => /^Latest valid POWER day/i.test(note));
+  const count = dropped && dropped.match(/(\d+)/);
+  const day = latest && latest.match(/(\d{4}-\d{2}-\d{2})/);
+  const bits = [];
+  if (count) bits.push(`${count[1]} fill days dropped`);
+  if (day) bits.push(`latest ${day[1]}`);
+  return bits.length ? `${lead} ${bits.join(", ")}.` : lead;
 }
 
 function flareNote(data) {
   const summary = data.fire_summary || {};
   const feed = (data.feeds || []).find((item) => item.id === "firms");
   const lead = "Filtered known industrial heat sources (refinery flares).";
-  if (summary.available === false || feed?.status === "unavailable") {
-    const why = (feed?.notes || []).find(Boolean);
-    return why ? `${lead} ${why}` : `${lead} Satellite detections were not available for this lookup.`;
-  }
+  if (summary.available === false || feed?.status === "unavailable") return `${lead} Live heat left out.`;
   const count = data.filtered_firms_count ?? summary.industrial_count;
-  const sites = (summary.industrial_by_site || []).map((site) => site.name).filter(Boolean);
-  const named = sites.slice(0, 2).join(" and ");
   if (count == null) return lead;
   if (!count) return `${lead} None in this window.`;
-  const where = named ? ` at ${named}` : "";
-  return `${lead} ${count} kept out of the score${where}.`;
+  return `${lead} ${count} kept out.`;
 }
 
 function renderNotes(data) {
@@ -256,9 +246,9 @@ function aerialUrl(lat, lon) {
   return `https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPImagery/ImageServer/exportImage?bbox=${bbox}&bboxSR=4326&imageSR=3857&size=800,800&format=jpg&f=image`;
 }
 
-function aerialBlock(report) {
-  const lat = report.address && report.address.lat;
-  const lon = report.address && report.address.lon;
+function aerialBlock(data) {
+  const lat = data.address && data.address.lat;
+  const lon = data.address && data.address.lon;
   if (lat == null || lon == null) return "";
   return `
     <figure class="aerial" id="aerial">
@@ -291,10 +281,7 @@ function orbitUrl(lat, lon, day) {
     + `&LAYERS=${layers}&STYLES=`;
 }
 
-function orbitBlock(report) {
-  const lat = report.address && report.address.lat;
-  const lon = report.address && report.address.lon;
-  if (lat == null || lon == null) return "";
+function orbitBlock() {
   return `
     <figure class="orbit" id="orbit">
       <h2>Today from orbit</h2>
@@ -303,11 +290,11 @@ function orbitBlock(report) {
     </figure>`;
 }
 
-function watchOrbit(figure, report) {
+function watchOrbit(figure, data) {
   const img = figure && figure.querySelector("img");
-  if (!img || !report.address) return;
-  const lat = report.address.lat;
-  const lon = report.address.lon;
+  if (!img || !data.address) return;
+  const lat = data.address.lat;
+  const lon = data.address.lon;
   const caption = figure.querySelector("figcaption");
   const today = utcDay(0);
   const yesterday = utcDay(1);
@@ -386,15 +373,15 @@ function addPoint(layer, point, kind) {
   marker.addTo(layer);
 }
 
-function renderMap(report) {
+function renderMap(data) {
   if (fireMap) {
     fireMap.remove();
     fireMap = null;
   }
   const el = document.querySelector("#map");
-  if (!el || !window.L || !report.address) return;
-  const lat = report.address.lat;
-  const lon = report.address.lon;
+  if (!el || !window.L || !data.address) return;
+  const lat = data.address.lat;
+  const lon = data.address.lon;
   fireMap = L.map(el, { scrollWheelZoom: false }).setView([lat, lon], 9);
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 18,
@@ -414,25 +401,27 @@ function renderMap(report) {
       fillOpacity: ring.opacity,
     }).bindTooltip(`${ring.km} km · fire proximity gradient`).addTo(fireMap);
   }
-  const summary = report.fire_summary || {};
+  const summary = data.fire_summary || {};
   for (const point of summary.industrial_points || []) addPoint(fireMap, point, "industrial");
-  for (const point of summary.low_confidence_points || report.low_confidence || []) addPoint(fireMap, point, "low");
+  for (const point of summary.low_confidence_points || data.low_confidence || []) addPoint(fireMap, point, "low");
   for (const point of summary.possible_static || []) addPoint(fireMap, point, "low-frp");
-  for (const point of summary.kept || report.fires || []) addPoint(fireMap, point, "kept");
+  for (const point of summary.kept || data.fires || []) addPoint(fireMap, point, "kept");
   L.marker([lat, lon], {
     icon: L.divIcon({ className: "home-mark", iconSize: [14, 14], iconAnchor: [7, 7] }),
     keyboard: false,
     zIndexOffset: 1000,
-  }).bindTooltip(report.address.label || "Address").addTo(fireMap);
+  }).bindTooltip(data.address.label || "Address").addTo(fireMap);
   fireMap.fitBounds(L.latLng(lat, lon).toBounds(50000), { padding: [18, 18] });
   setTimeout(() => fireMap && fireMap.invalidateSize(), 0);
 }
 
-
 function fillExtras() {
   if (!report || !extrasEl) return;
   const day = activeDay();
-  if (!day) { extrasEl.hidden = true; return; }
+  if (!day) {
+    extrasEl.hidden = true;
+    return;
+  }
   extrasEl.hidden = false;
   const rows = (day.breakdown || []).map((item) => `
     <tr>
@@ -472,7 +461,7 @@ function fillExtras() {
       <tbody>${rows}</tbody>
     </table>
     ${aerialBlock(report)}
-    ${orbitBlock(report)}
+    ${orbitBlock()}
     <h2>Fire proximity gradient</h2>
     <div class="map-block">
       <div id="map" role="region" aria-label="Fire proximity gradient"></div>
@@ -498,11 +487,22 @@ function renderDays() {
     return;
   }
   daysEl.hidden = false;
-  daysEl.innerHTML = days.map((day) => `
-    <button type="button" data-date="${esc(day.date)}" aria-pressed="${day.date === selectedDay}">
-      ${esc(day.label)}
-      <strong>${day.score ?? "—"}</strong>
-    </button>`).join("");
+  const scores = days.map((day) => day.score).filter((score) => score != null);
+  const max = scores.length ? Math.max(...scores) : null;
+  const peakCount = max == null ? 0 : days.filter((day) => day.score === max).length;
+  const markPeak = max != null && peakCount < days.length;
+  daysEl.innerHTML = days.map((day) => {
+    const height = day.score == null || max == null
+      ? 4
+      : Math.max(6, Math.round((Number(day.score) / (max || 1)) * 28));
+    const peak = markPeak && day.score === max;
+    return `
+      <button type="button" data-date="${esc(day.date)}" class="${peak ? "is-peak" : ""}" aria-pressed="${day.date === selectedDay}">
+        <span class="day-bar" style="height:${height}px"></span>
+        ${esc(day.label)}
+        <strong>${day.score ?? "—"}</strong>
+      </button>`;
+  }).join("");
   daysEl.querySelectorAll("button").forEach((button) => {
     button.addEventListener("click", () => {
       selectedDay = button.dataset.date;
@@ -536,8 +536,8 @@ function draw() {
   renderDays();
   renderBreakdown(day);
   renderNotes(report);
-  if (report.disclaimer) footEl.textContent = report.disclaimer;
   fillExtras();
+  if (report.disclaimer) footEl.textContent = report.disclaimer;
 }
 
 function showError(body) {
