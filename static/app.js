@@ -161,8 +161,19 @@ function syncGlobe(lat, lon, fires) {
       return marker;
     });
 
-  const altitude = nearBay(lat, lon) ? 1.05 : 1.45;
-  globe.pointOfView({ lat, lng: lon, altitude }, reducedMotion() ? 0 : 900);
+  globe.controls().autoRotate = false;
+  globe
+    .ringsData([{ lat, lng: lon }])
+    .ringLat("lat")
+    .ringLng("lng")
+    .ringColor(() => (t) => `rgba(255,120,0,${1 - t})`)
+    .ringMaxRadius(4)
+    .ringPropagationSpeed(3)
+    .ringRepeatPeriod(600);
+  globe.pointOfView({ lat, lng: lon, altitude: 2.5 }, 600);
+  setTimeout(() => {
+    if (globe) globe.pointOfView({ lat, lng: lon, altitude: 0.3 }, 1600);
+  }, 600);
   const lines = ["Bright pin is this address."];
   if (heat.length || showFlares) lines.push("Orange marks are satellite heat kept in the score.");
   if (showFlares) lines.push("Refinery flares are left out of the score.");
@@ -511,6 +522,24 @@ function renderDays() {
   });
 }
 
+const INSURANCE_BOX = {
+  low: "Carriers are unlikely to flag this week.",
+  moderate: "Carriers are unlikely to flag this week.",
+  elevated: "Expect closer review at renewal. Do the checklist below for California Safer from Wildfires discounts.",
+  high: "Expect closer review at renewal. Do the checklist below for California Safer from Wildfires discounts.",
+  extreme: "Active fire nearby. Insurers often pause new policies in this area until it is contained.",
+};
+
+function renderInsuranceBox(key) {
+  const box = document.querySelector("#insurance-box");
+  const text = document.querySelector("#insurance-box-text");
+  if (!box || !text) return;
+  const msg = INSURANCE_BOX[key];
+  box.hidden = !msg;
+  box.dataset.tier = msg ? key : "";
+  text.textContent = msg || "";
+}
+
 function draw() {
   if (!report) return;
   const day = activeDay();
@@ -530,6 +559,7 @@ function draw() {
   const flag = component(day, "red_flag");
   if (flag?.available && flag.normalized >= 100) bits.push("red flag");
   tierMetaEl.textContent = bits.length ? bits.join(" · ") : "Insurance risk signal";
+  renderInsuranceBox(key);
 
   const custom = report.plain_language_takeaway;
   takeawayEl.textContent = custom || insurabilitySentence(TIER_LABELS[key] || name, place);
