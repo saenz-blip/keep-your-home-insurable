@@ -433,15 +433,11 @@ function renderMap(data) {
   if (!el || !window.L || !data.address) return;
   const lat = data.address.lat;
   const lon = data.address.lon;
-  fireMap = L.map(el, { scrollWheelZoom: true, maxZoom: 19 }).setView([lat, lon], 13);
-  fireBase = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
-    maxZoom: 19,
-    attribution: "Tiles &copy; Esri, Maxar, Earthstar Geographics",
+  fireMap = L.map(el, { scrollWheelZoom: false }).setView([lat, lon], 9);
+  fireBase = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 18,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   }).addTo(fireMap);
-  const hint = document.querySelector("#sat-hint");
-  if (hint) {
-    el.addEventListener("wheel", () => { hint.style.opacity = "0"; }, { once: true, passive: true });
-  }
   const rings = [
     { km: 50, opacity: 0.04 },
     { km: 15, opacity: 0.08 },
@@ -466,22 +462,8 @@ function renderMap(data) {
     keyboard: false,
     zIndexOffset: 1000,
   }).bindTooltip(data.address.label || "Address").addTo(fireMap);
-  L.marker([lat, lon], {
-    icon: L.divIcon({
-      className: "house-mark",
-      html: '<div style="font-size:22px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.8))">🏠</div>',
-      iconSize: [24, 24],
-      iconAnchor: [12, 22],
-    }),
-    keyboard: false,
-    zIndexOffset: 2000,
-  }).bindTooltip("This address").addTo(fireMap);
-  const map = fireMap;
-  setTimeout(() => {
-    if (fireMap !== map) return;
-    map.invalidateSize();
-    map.flyTo([lat, lon], 18, { duration: reducedMotion() ? 0 : 3, easeLinearity: 0.1 });
-  }, 50);
+  fireMap.fitBounds(L.latLng(lat, lon).toBounds(50000), { padding: [18, 18] });
+  setTimeout(() => fireMap && fireMap.invalidateSize(), 0);
 }
 
 function fillExtras() {
@@ -533,14 +515,7 @@ function fillExtras() {
     ${orbitBlock()}
     <h2>Fire proximity gradient</h2>
     <div class="map-block">
-      <div class="sat-card" style="position:relative;width:100%;height:280px;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,0.12);box-shadow:0 10px 30px rgba(0,0,0,0.35);margin:8px 0 10px">
-        <div id="map" role="region" aria-label="Live satellite view of your home with fire proximity rings" style="position:absolute;inset:0;height:100%;width:100%;border-radius:12px"></div>
-        <div style="position:absolute;top:10px;left:12px;right:12px;z-index:500;display:flex;justify-content:space-between;pointer-events:none;font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;color:#f3efe6;text-shadow:0 1px 3px rgba(0,0,0,.9)">
-          <span>LIVE SATELLITE · YOUR HOME</span>
-          <span>${report.address && report.address.lat != null ? esc(formatCoords(report.address.lat, report.address.lon)) : ""}</span>
-        </div>
-        <div id="sat-hint" style="position:absolute;bottom:10px;left:50%;transform:translateX(-50%);z-index:500;pointer-events:none;font-family:var(--mono);font-size:10.5px;color:#f3efe6;background:rgba(0,0,0,.45);padding:3px 8px;border-radius:999px;transition:opacity .6s ease">scroll to zoom</div>
-      </div>
+      <div id="map" role="region" aria-label="Fire proximity gradient"></div>
       <p class="meta">Fire proximity gradient at 5, 15, and 50 km. Orange dots are detections used in the score. Gray dots were filtered out (industrial flares, low confidence, or persistent low-FRP heat).</p>
     </div>
     <h2>Nearby satellite detections</h2>
@@ -732,6 +707,8 @@ async function lookup(params) {
       draw();
       const point = body.address || {};
       syncGlobe(point.lat, point.lon, body.fires || []);
+      const token = ++houseZoomToken;
+      setTimeout(() => zoomToHouse(point.lat, point.lon, token), 2200);
     }
   } catch {
     statusEl.textContent = "";
