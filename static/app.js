@@ -3,12 +3,6 @@ const DEFAULT_LAT = 37.87;
 const DEFAULT_LON = -122.23;
 const DEFAULT_PLACE = "Berkeley hills";
 
-const REFINERIES = [
-  { lat: 37.9415, lon: -122.395 },
-  { lat: 38.02, lon: -122.085 },
-  { lat: 38.072, lon: -122.1382 },
-];
-
 const TIER_LABELS = {
   low: "Low",
   moderate: "Moderate",
@@ -134,7 +128,7 @@ function mountGlobe() {
     controls.enablePan = false;
     controls.rotateSpeed = 0.45;
     controls.zoomSpeed = 0.55;
-    controls.minDistance = 170;
+    controls.minDistance = 150;
     controls.maxDistance = 520;
     window.addEventListener("resize", fitGlobe);
   } catch {
@@ -144,35 +138,34 @@ function mountGlobe() {
 
 function syncGlobe(lat, lon, fires) {
   if (!globe || lat == null || lon == null) return;
-  globe
-    .htmlElementsData([{ lat, lng: lon }])
-    .htmlLat("lat")
-    .htmlLng("lng")
-    .htmlAltitude(0.012)
-    .htmlElement(() => {
-      const marker = document.createElement("div");
-      marker.className = "pin";
-      return marker;
-    });
-
   const heat = (fires || [])
     .filter((fire) => fire.lat != null && fire.lon != null)
     .map((fire) => ({ lat: fire.lat, lng: fire.lon, kind: "heat" }));
-  const flares = nearBay(lat, lon)
-    ? REFINERIES.map((site) => ({ lat: site.lat, lng: site.lon, kind: "flare" }))
-    : [];
+  const showFlares = nearBay(lat, lon);
   globe
-    .pointsData([...flares, ...heat])
-    .pointLat("lat")
-    .pointLng("lng")
-    .pointColor((point) => (point.kind === "flare" ? "rgba(214, 214, 206, 0.9)" : "#e07a3d"))
-    .pointAltitude(0.012)
-    .pointRadius((point) => (point.kind === "flare" ? 0.16 : 0.28))
-    .pointLabel((point) => (point.kind === "flare" ? "Excluded refinery flare" : "Satellite heat kept in the score"));
+    .pointsData([])
+    .htmlElementsData([{ lat, lng: lon, kind: "pin" }, ...heat])
+    .htmlLat("lat")
+    .htmlLng("lng")
+    .htmlAltitude(0.012)
+    .htmlElement((point) => {
+      const marker = document.createElement("div");
+      marker.className = point.kind === "pin" ? "pin" : `dot dot-${point.kind}`;
+      marker.title = point.kind === "heat"
+        ? "Satellite heat kept in the score"
+        : point.kind === "flare"
+          ? "Refinery flare left out"
+          : "Selected location";
+      return marker;
+    });
 
-  const altitude = nearBay(lat, lon) ? 1.02 : 1.4;
+  const altitude = nearBay(lat, lon) ? 1.05 : 1.45;
   globe.pointOfView({ lat, lng: lon, altitude }, reducedMotion() ? 0 : 900);
-  legendEl.hidden = !nearBay(lat, lon);
+  const lines = ["Bright pin is this address."];
+  if (heat.length || showFlares) lines.push("Orange marks are satellite heat kept in the score.");
+  if (showFlares) lines.push("Refinery flares are left out of the score.");
+  legendEl.hidden = false;
+  legendEl.textContent = lines.join(" ");
 }
 
 function insurabilitySentence(name, place) {
@@ -185,29 +178,26 @@ function powerNote(data) {
   const lead = "POWER data ~3 days behind (filtered −999s).";
   const feed = (data.feeds || []).find((item) => item.id === "power");
   const notes = feed?.notes || [];
-  const extra = [
-    notes.find((note) => /fill values|unusable/i.test(note)),
-    notes.find((note) => /^Latest valid POWER day/i.test(note)),
-  ].filter(Boolean);
-  if (data.power_lag_note && !notes.length) return data.power_lag_note;
-  return [lead, ...extra].join(" ");
+  if (!feed || feed.status === "unavailable") return `${lead} Rain history left out.`;
+  const dropped = notes.find((note) => /fill values/i.test(note));
+  const latest = notes.find((note) => /^Latest valid POWER day/i.test(note));
+  const count = dropped && dropped.match(/(\d+)/);
+  const day = latest && latest.match(/(\d{4}-\d{2}-\d{2})/);
+  const bits = [];
+  if (count) bits.push(`${count[1]} fill days dropped`);
+  if (day) bits.push(`latest ${day[1]}`);
+  return bits.length ? `${lead} ${bits.join(", ")}.` : lead;
 }
 
 function flareNote(data) {
   const summary = data.fire_summary || {};
   const feed = (data.feeds || []).find((item) => item.id === "firms");
   const lead = "Filtered known industrial heat sources (refinery flares).";
-  if (summary.available === false || feed?.status === "unavailable") {
-    const why = (feed?.notes || []).find(Boolean);
-    return why ? `${lead} ${why}` : `${lead} Satellite detections were not available for this lookup.`;
-  }
+  if (summary.available === false || feed?.status === "unavailable") return `${lead} Live heat left out.`;
   const count = data.filtered_firms_count ?? summary.industrial_count;
-  const sites = (summary.industrial_by_site || []).map((site) => site.name).filter(Boolean);
-  const named = sites.slice(0, 2).join(" and ");
   if (count == null) return lead;
   if (!count) return `${lead} None in this window.`;
-  const where = named ? ` at ${named}` : "";
-  return `${lead} ${count} kept out of the score${where}.`;
+  return `${lead} ${count} kept out.`;
 }
 
 function renderNotes(data) {
@@ -250,11 +240,22 @@ function renderDays() {
     return;
   }
   daysEl.hidden = false;
-  daysEl.innerHTML = days.map((day) => `
-    <button type="button" data-date="${esc(day.date)}" aria-pressed="${day.date === selectedDay}">
-      ${esc(day.label)}
-      <strong>${day.score ?? "—"}</strong>
-    </button>`).join("");
+  const scores = days.map((day) => day.score).filter((score) => score != null);
+  const max = scores.length ? Math.max(...scores) : null;
+  const peakCount = max == null ? 0 : days.filter((day) => day.score === max).length;
+  const markPeak = max != null && peakCount < days.length;
+  daysEl.innerHTML = days.map((day) => {
+    const height = day.score == null || max == null
+      ? 4
+      : Math.max(6, Math.round((Number(day.score) / (max || 1)) * 28));
+    const peak = markPeak && day.score === max;
+    return `
+      <button type="button" data-date="${esc(day.date)}" class="${peak ? "is-peak" : ""}" aria-pressed="${day.date === selectedDay}">
+        <span class="day-bar" style="height:${height}px"></span>
+        ${esc(day.label)}
+        <strong>${day.score ?? "—"}</strong>
+      </button>`;
+  }).join("");
   daysEl.querySelectorAll("button").forEach((button) => {
     button.addEventListener("click", () => {
       selectedDay = button.dataset.date;
