@@ -397,6 +397,33 @@ function addPoint(layer, point, kind) {
   marker.addTo(layer);
 }
 
+let fireBase = null;
+let houseZoomToken = 0;
+
+function zoomToHouse(lat, lon, token) {
+  if (token !== houseZoomToken || !fireMap || !window.L || lat == null || lon == null) return;
+  const section = document.querySelector("#map");
+  if (section) section.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "center" });
+  if (fireBase) fireMap.removeLayer(fireBase);
+  fireBase = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+    maxZoom: 19,
+    attribution: "Tiles &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community",
+  }).addTo(fireMap);
+  fireBase.bringToBack();
+  fireMap.setMaxZoom(19);
+  L.marker([lat, lon], {
+    icon: L.divIcon({
+      className: "house-mark",
+      html: '<div style="font-size:22px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.8))">🏠</div>',
+      iconSize: [24, 24],
+      iconAnchor: [12, 22],
+    }),
+    keyboard: false,
+    zIndexOffset: 2000,
+  }).bindTooltip("This address").addTo(fireMap);
+  fireMap.flyTo([lat, lon], 19, { duration: 2.5 });
+}
+
 function renderMap(data) {
   if (fireMap) {
     fireMap.remove();
@@ -407,7 +434,7 @@ function renderMap(data) {
   const lat = data.address.lat;
   const lon = data.address.lon;
   fireMap = L.map(el, { scrollWheelZoom: false }).setView([lat, lon], 9);
-  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  fireBase = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 18,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   }).addTo(fireMap);
@@ -680,6 +707,8 @@ async function lookup(params) {
       draw();
       const point = body.address || {};
       syncGlobe(point.lat, point.lon, body.fires || []);
+      const token = ++houseZoomToken;
+      setTimeout(() => zoomToHouse(point.lat, point.lon, token), 2200);
     }
   } catch {
     statusEl.textContent = "";
