@@ -515,28 +515,46 @@ Berkeley: 10 Low, "Low risk through Sunday," with all live feeds working. Render
 ### User
 *4:04 PM PT*
 
-Code is frozen except a possible UI-only PR from Samarth (branch new-ui, only app/static files). If it lands by 4:12, test Greene TN and Berkeley on it, merge only if both work, and confirm the Render redeploy is good. Otherwise ignore it. Meanwhile: 1) finish the README with all required sections and the live link https://keep-your-home-insurable.onrender.com at the top, 2) export this Grok Bot session with names, emails, phone numbers and keys removed and commit it to the repo.
+Code is frozen except a possible UI-only PR from [name removed] (branch new-ui, only app/static files). If it lands by 4:12, test Greene TN and Berkeley on it, merge only if both work, and confirm the Render redeploy is good. Otherwise ignore it. Meanwhile: 1) finish the README with all required sections and the live link https://keep-your-home-insurable.onrender.com at the top, 2) export this Grok Bot session with names, emails, phone numbers and keys removed and commit it to the repo.
 
 Tell me when both are done.
 
 ### Grok Bot
 *4:04 PM PT*
 
-On it. I'm checking for Samarth's new-ui branch and starting on the README and the cleaned-up session export now.
+On it. I'm checking for [name removed]'s new-ui branch and starting on the README and the cleaned-up session export now.
 
 ### Grok Bot
 *4:05 PM PT*
 
-There's a remote branch named samarth (not new-ui yet). I'm checking whether it's UI-only, and writing the cleaned session export in parallel.
+There's a remote branch named [teammate-branch] (not new-ui yet). I'm checking whether it's UI-only, and writing the cleaned session export in parallel.
 
 ### User
 *4:06 PM PT*
 
-Samarth pushed his frontend to the samarth branch. Check the diff touches only app/static files. Run it and test Greene TN (85 Extreme, globe, orbit image, gradient map, aerial photo) and Berkeley. If both work, open a PR and merge it to main, then confirm the Render redeploy is live and retest on the live link.
+[name removed] pushed his frontend to the [teammate] branch. Check the diff touches only app/static files. Run it and test Greene TN (85 Extreme, globe, orbit image, gradient map, aerial photo) and Berkeley. If both work, open a PR and merge it to main, then confirm the Render redeploy is live and retest on the live link.
 
-If anything breaks, don't merge. Also tell the Cursor agent to stop its watched.earth restyle branch. We're going with Samarth's UI.
+If anything breaks, don't merge. Also tell the Cursor agent to stop its watched.earth restyle branch. We're going with [name removed]'s UI.
 
 ### Grok Bot
 *4:06 PM PT*
 
-Checking Samarth's samarth branch now, and telling the Cursor agent to stop its restyle.
+Checking [name removed]'s [teammate] branch now, and telling the Cursor agent to stop its restyle.
+
+---
+
+## Final stretch (4:06–4:38 PM PT)
+
+**User:** Render auto-deploy didn't fire, so I triggered a manual deploy of PR #4 (commit 727616d). Once it's Live, retest Greene TN and Berkeley on the live link. Then confirm the README (all sections + live link) and the cleaned session export are committed to the repo. Also turn on auto-deploy for main in Render if you can.
+
+**Grok Bot:** Live link checks out on https://keep-your-home-insurable.onrender.com (deploy 727616d). Greene TN: 85 Extreme, "Active wildfire 0.4 km W (Greene - Caney Creek Lane). Extreme risk today. Clear brush within 30 ft now," 12 detections, all feeds live; the page serves the globe, map, and extras. Berkeley: 6 Low, "Low risk through Sunday," all feeds live. Auto-deploy is already on in Render for commits to main; it just didn't pick up that merge.
+
+**Grok Bot:** README and cleaned session export merged to main via PR #5 (4b803a4), docs only.
+
+**User:** Run git pull origin main first. PR #6 just merged. Edit only static/app.js and static/index.html. 1) After a lookup succeeds, stop auto-rotate, zoom with globe.pointOfView to altitude 2.5 over 600 ms, then to 0.3 over 1600 ms, and add a pulsing orange ring at the address. 2) Under the score, add a "What this means for your insurance" box that changes with the tier. Commit straight to main with "Zoom, scan ring, insurance box".
+
+**Grok Bot:** Pulled main (e4c84bb), made both edits (two-step zoom plus ringsData scan ring in syncGlobe; a tier-driven insurance box under the score with inline styles so styles.css stayed untouched), passed node --check, and pushed to main as 59aad86.
+
+**User:** Export this full Grok Bot session to docs/grok-bot-session.md, replacing the old one. Remove all names, emails, phone numbers, API keys (including the FIRMS key) and tokens. Commit to main and push.
+
+**Grok Bot:** Updated this export and re-ran the scrub.
